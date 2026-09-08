@@ -80,13 +80,25 @@ from .models import (
 )
 from .plan import ExecutionPlan, OutputAssembly, PlanStage, ProcessingRun, compile_plan
 from .report import describe_processing, full_report, report_text
-from .validation import BACKENDS, GroupingError, GroupingIssue, check_backend, raise_for_errors
+from .validation import (
+    BACKENDS,
+    ISSUE_CODES,
+    GroupingError,
+    GroupingIssue,
+    IssueSpec,
+    check_backend,
+    describe_issue,
+    raise_for_errors,
+)
 
 __all__ = [
     'ANAT_REFERENCE_CHOICES',
     'ANAT_REFERENCES',
     'AnatReference',
     'BACKENDS',
+    'ISSUE_CODES',
+    'IssueSpec',
+    'describe_issue',
     'Bids2TableCatalog',
     'HMC_CAPABILITIES',
     'SDC_CAPABILITIES',

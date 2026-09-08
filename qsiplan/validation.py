@@ -57,6 +57,224 @@ def warning(code: str, message: str, files=(), scope=None) -> GroupingIssue:
     return GroupingIssue('warning', code, message, tuple(files), scope)
 
 
+@dataclasses.dataclass(frozen=True)
+class IssueSpec:
+    """What one issue code means, and the severities it may be emitted at.
+
+    Most codes have one severity. A few are decided at emit time - an
+    anatomical SDC method that was *demanded* is an error where an inferred
+    one is a warning - and list both.
+    """
+
+    description: str
+    severities: frozenset[str]
+
+
+def _spec(description: str, *severities: str) -> IssueSpec:
+    return IssueSpec(description, frozenset(severities))
+
+
+#: Every issue code the package can emit, with a one-line meaning. This is
+#: the registry the conformance test checks emitters against (every emitted
+#: code is registered, every registered code is emitted, severities match),
+#: so a typo in an emitter fails CI instead of quietly minting a new code.
+#: It is deliberately *not* enforced at emit time: ``error``/``warning`` are
+#: public, and a consumer may emit codes of its own through them.
+ISSUE_CODES: dict[str, IssueSpec] = {
+    # ---- sidecar / metadata indexing --------------------------------------
+    'invalid-json-sidecar': _spec(
+        'A JSON sidecar could not be parsed or is not an object.', 'error'
+    ),
+    'ambiguous-json-inheritance': _spec(
+        'Two sidecars at the same inheritance level both apply to a file.', 'error'
+    ),
+    'ambiguous-gradient-inheritance': _spec(
+        'Two .bval/.bvec files at the same inheritance level both apply to a file.', 'error'
+    ),
+    'intendedfor-absolute-path': _spec(
+        'An IntendedFor entry is an absolute path (not portable BIDS); used as-is.', 'warning'
+    ),
+    'intendedfor-missing-target': _spec(
+        'An IntendedFor entry names a file that does not exist in the dataset.', 'warning'
+    ),
+    # ---- curated fieldmap linkage (E1) --------------------------------------
+    'reserved-b0field-prefix': _spec(
+        "A curated B0FieldIdentifier uses the reserved 'auto+' prefix.", 'error'
+    ),
+    'b0field-multisession': _spec(
+        'One B0FieldIdentifier is declared by files in several sessions.', 'error'
+    ),
+    'curated-estimation-unclassifiable': _spec(
+        "A B0FieldIdentifier's files do not determine an estimation method.", 'error'
+    ),
+    'curated-pepolar-single-signature': _spec(
+        'A curated PEPOLAR estimation has only one distortion signature.', 'error'
+    ),
+    'estimation-shim-mismatch': _spec(
+        'Files combined for one estimation were acquired with different shims.',
+        'error',
+        'warning',
+    ),
+    'intendedfor-superseded': _spec(
+        'A fieldmap carries both B0FieldIdentifier and IntendedFor; IntendedFor is ignored.',
+        'warning',
+    ),
+    # ---- IntendedFor translation (E2) ---------------------------------------
+    'unlinked-fmap': _spec(
+        'An fmap/ EPI has no B0FieldIdentifier or IntendedFor and will not be used.', 'warning'
+    ),
+    'intendedfor-unclassifiable': _spec(
+        'IntendedFor fmap files do not determine an estimation method; not used.', 'warning'
+    ),
+    # ---- reverse-PE heuristic (E3) and shims --------------------------------
+    'reverse-pe-not-inferred': _spec(
+        'A session has curated fieldmap metadata, so reverse-PE pairing is not inferred.',
+        'warning',
+    ),
+    'session-multiple-shims': _spec(
+        'A session has several shim settings; series only pair within one.', 'warning'
+    ),
+    'shims-ignored': _spec(
+        'Shim checking is disabled; all series treated as compatible.', 'warning'
+    ),
+    'shim-wildcard': _spec(
+        'Series without a ShimSetting are treated as compatible with every shim.', 'warning'
+    ),
+    'pepolar-dwis-ignored': _spec(
+        '--ignore pepolar-dwis dropped a curated DWI-to-DWI reverse-PE pairing.', 'warning'
+    ),
+    # ---- application ------------------------------------------------------
+    'unresolvable-b0fieldsource': _spec(
+        'A B0FieldSource names an identifier no file in the subject declares.', 'error'
+    ),
+    'mixed-application-provenance': _spec(
+        'Some DWI series have curated B0FieldSource metadata and others were '
+        'assigned automatically.',
+        'warning',
+    ),
+    'estimation-unused': _spec(
+        'A curated or translated estimation corrects no DWI series.', 'warning'
+    ),
+    'cross-session-fieldmap-application': _spec(
+        'One estimation corrects DWI series in several sessions (honored, but sessions reshim).',
+        'warning',
+    ),
+    'cross-session-anat-reference': _spec(
+        "A session has no anatomical of its own, so another session's is used for SDC.",
+        'warning',
+    ),
+    # ---- anatomical (fieldmap-less) SDC references --------------------------
+    'force-sdc-anat-reference-needs-method': _spec(
+        "--force sdc-anat-reference was given with --sdc-anat-reference 'none'.", 'error'
+    ),
+    'sdc-anat-reference-auto-no-anatomicals': _spec(
+        '--sdc-anat-reference auto found no T1w or T2w for some series; no anatomical SDC.',
+        'warning',
+    ),
+    'synb0-requires-t1w': _spec('SyNb0 was requested but the subject has no T1w.', 'error'),
+    'synb0-missing-pedir': _spec(
+        'SyNb0 was requested for series with no PhaseEncodingDirection.', 'error'
+    ),
+    't2wreg-requires-t2w': _spec('T2Wreg was requested but the subject has no T2w.', 'error'),
+    'syn-requires-t1w': _spec('SyN-SDC was requested but the subject has no T1w.', 'error'),
+    'syn-missing-pedir': _spec(
+        'SyN-SDC was requested for series with no PhaseEncodingDirection.', 'error'
+    ),
+    # ---- distortion groups, units, outputs ----------------------------------
+    'missing-pedir': _spec(
+        'A DWI series has no PhaseEncodingDirection and cannot be combined or PEPOLAR-corrected.',
+        'warning',
+    ),
+    'reserved-multipartid-prefix': _spec(
+        "A curated MultipartID uses the reserved 'auto+' prefix.", 'error'
+    ),
+    'multipartid-overridden': _spec(
+        'separate_all_dwis overrides the MultipartIDs in the sidecars.', 'warning'
+    ),
+    'partial-multipart': _spec(
+        'Some DWI series have a MultipartID and others do not; the latter stand alone.', 'warning'
+    ),
+    'multipart-overlap': _spec(
+        'A DWI series lists several MultipartIDs and is preprocessed once per group.', 'warning'
+    ),
+    'multipartid-acq-invalid': _spec(
+        "An 'acq-' MultipartID's label is not a valid BIDS label.", 'error'
+    ),
+    'output-name-collision': _spec(
+        'Two output groups would produce the same output name.', 'error'
+    ),
+    'estimation-spans-outputs': _spec(
+        'One estimation corrects series in several correction units (estimated once per unit).',
+        'warning',
+    ),
+    # ---- data compatibility within a unit / output --------------------------
+    'maxb-mismatch': _spec(
+        'Series concatenated into one output have different maximum b-values.', 'warning'
+    ),
+    'fov-grid-mismatch': _spec(
+        'Series stacked in one correction unit are sampled on different voxel grids.', 'error'
+    ),
+    'fov-oblique': _spec(
+        'Series stacked in one correction unit have differently oriented fields of view.',
+        'error',
+        'warning',
+    ),
+    'fov-shifted': _spec(
+        'Series stacked in one correction unit share a grid but their fields of view are offset.',
+        'warning',
+    ),
+    # ---- plan feasibility (per method selection) ----------------------------
+    'no-sdc': _spec(
+        'An output has no fieldmap and no anatomical SDC method enabled; not corrected.',
+        'warning',
+    ),
+    'anat-sdc-unsupported': _spec(
+        'A T2Wreg estimation is requested on a path that cannot run it (TORTOISE only).',
+        'error',
+        'warning',
+    ),
+    'mixed-non-pepolar': _spec(
+        'A DRBUDDI refinement was requested for a non-PEPOLAR estimation; single-stage instead.',
+        'warning',
+    ),
+    'topup-single-signature': _spec(
+        'TOPUP needs at least two distortion signatures but the estimation has one.', 'error'
+    ),
+    'drbuddi-only-infeasible': _spec(
+        'A pooled DRBUDDI-only selection spans several blip groups; DRBUDDI corrects one.',
+        'error',
+    ),
+    'drbuddi-refinement-multigroup': _spec(
+        'The estimation spans several blip groups, so no DRBUDDI refinement is applied.',
+        'warning',
+    ),
+    'drbuddi-refinement-not-useful': _spec(
+        'DRBUDDI has no reverse-PE dMRI series to refine with; correction stays single-stage.',
+        'warning',
+    ),
+    'drbuddi-no-opposing-pair': _spec(
+        'DRBUDDI has no opposing blip for some series under this selection.', 'warning'
+    ),
+    'eddy-requires-shelled': _spec(
+        'eddy requires shelled q-space sampling but a series is non-shelled.', 'error'
+    ),
+    'mixed-shelled-nonshelled': _spec(
+        'Shelled and non-shelled series are mixed within one output.', 'warning'
+    ),
+}
+
+
+def describe_issue(code: str) -> str:
+    """The registered one-line meaning of ``code``, or the code itself if unknown.
+
+    Unknown codes are tolerated (a consumer may emit its own), so rendering
+    never fails on them; the conformance test keeps the package's own codes
+    registered.
+    """
+    spec = ISSUE_CODES.get(code)
+    return spec.description if spec is not None else code
+
+
 def raise_for_errors(grouping: DWIGrouping):
     """Raise :class:`GroupingError` if any error-severity issue was collected."""
     errors = grouping.errors
