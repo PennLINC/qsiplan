@@ -188,8 +188,6 @@ _HMC_ALIASES = {
     'none': HmcMethod.SHORELINE,
 }
 
-_LEGACY_HMC_MODEL = {'3dshore': '3dSHORE', 'tensor': 'tensor', 'none': 'none'}
-
 
 @dataclasses.dataclass(frozen=True)
 class MethodSelection:
@@ -223,20 +221,6 @@ class MethodSelection:
         for tool in self.pepolar_tools:
             if CorrectionMethod.PEPOLAR not in SDC_CAPABILITIES[tool].consumes:
                 raise ValueError(f'{tool.value!r} is not a PEPOLAR tool')
-
-    @property
-    def legacy_hmc_model(self) -> str:
-        """The legacy ``--hmc-model`` value equivalent to this selection."""
-        if self.hmc is HmcMethod.EDDY:
-            return 'eddy'
-        if self.hmc is HmcMethod.TORTOISE:
-            return 'tortoise'
-        return _LEGACY_HMC_MODEL[self.shoreline_model]
-
-    @property
-    def legacy_pepolar_method(self) -> str:
-        """The legacy ``--pepolar-method`` value equivalent to this selection."""
-        return '+'.join(SDC_CAPABILITIES[tool].label for tool in self.pepolar_tools)
 
     def label(self) -> str:
         """Display name, e.g. ``'eddy + TOPUP→DRBUDDI'``."""

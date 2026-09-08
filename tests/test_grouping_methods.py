@@ -1,8 +1,6 @@
 """The method axes, the capability registries, and the bridge from qsiprep's
 config vocabulary (``hmc_model``/``pepolar_method``) to a MethodSelection."""
 
-import itertools
-
 import pytest
 
 from qsiplan.cohort import COHORT_METHODS
@@ -15,9 +13,6 @@ from qsiplan.methods import (
     selection_for_config,
 )
 from qsiplan.models import CorrectionMethod
-
-LEGACY_HMC_MODELS = ('eddy', 'tortoise', '3dSHORE', 'tensor', 'none')
-LEGACY_PEPOLAR_METHODS = ('TOPUP', 'DRBUDDI', 'TOPUP+DRBUDDI')
 
 
 @pytest.mark.parametrize(
@@ -51,13 +46,6 @@ def test_pepolar_vocabulary_old_and_new():
             SdcTool.DRBUDDI,
         )
     assert selection_for_config('eddy', 'drbuddi').pepolar_tools == (SdcTool.DRBUDDI,)
-
-
-def test_legacy_values_round_trip():
-    for hmc_model, pepolar_method in itertools.product(LEGACY_HMC_MODELS, LEGACY_PEPOLAR_METHODS):
-        selection = selection_for_config(hmc_model, pepolar_method)
-        rebuilt = selection_for_config(selection.legacy_hmc_model, selection.legacy_pepolar_method)
-        assert rebuilt == selection
 
 
 def test_unknown_values_raise():
