@@ -2,7 +2,7 @@
 
 The adapter bridges the grouping model to the :class:`PreprocUnit` objects the
 workflow builders consume. Checked here: the per-method unit shapes (PEPOLAR
-splits, GRE files, fieldmap-less markers), the backend-aware decomposition,
+splits, GRE files, fieldmap-less markers), the capability-driven decomposition,
 and the concatenation scheme. Routing parity against the compiled execution
 plan lives in ``test_grouping_plan.py``.
 """
@@ -20,8 +20,13 @@ from qsiplan import (
 )
 from qsiplan.adapters import PreprocUnit
 from qsiplan.interactive import _load_gradients
+from qsiplan.methods import HMC_CAPABILITIES, HmcMethod, selection_for_config
 from qsiplan.models import DistortionSignature, DWIGrouping, FileRecord
 from qsiplan.utils import generate_bids_skeleton
+
+EDDY_TOPUP = selection_for_config('eddy', 'topup')
+EDDY_TOPUP_DRBUDDI = selection_for_config('eddy', 'topup+drbuddi')
+TORTOISE_DRBUDDI = selection_for_config('tortoise', 'drbuddi')
 
 
 def _basenames(value):
@@ -45,8 +50,10 @@ def _load_skeleton(name, tmp_path):
     return layout, {'dwi': sorted(dwi_files)}
 
 
-def _units(scenario, tmp_path, backend='fsl', **kwargs):
-    return to_preproc_units(load_scenario(scenario, tmp_path, strict=False, **kwargs), backend)
+def _units(scenario, tmp_path, selection=None, **kwargs):
+    return to_preproc_units(
+        load_scenario(scenario, tmp_path, strict=False, **kwargs), selection or EDDY_TOPUP
+    )
 
 
 def test_nibs_style(tmp_path):
@@ -61,12 +68,12 @@ def test_nibs_style(tmp_path):
     assert estimation.pe_axes == {'j'}
     assert estimation.bidirectional_axes == {'j'}
 
-    (unit,) = to_preproc_units(grouping, 'fsl')
+    (unit,) = to_preproc_units(grouping, EDDY_TOPUP)
     assert unit.output_name == 'sub-01'
     assert unit.has_bidirectional_dwi
     assert unit.pepolar_fieldmap_type == 'rpe_series'
     assert len(unit.dwi_files) == 4
-    scheme = concatenation_scheme(grouping, 'fsl')
+    scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {name: name for name in scheme}
 
     # The bval/bvec files carry no part- entity, so both parts inherit them.
@@ -93,12 +100,12 @@ def test_multiped_pools_all_directions(tmp_path):
     assert estimation.pe_axes == {'i', 'j'}
     assert estimation.bidirectional_axes == {'i', 'j'}
 
-    (unit,) = to_preproc_units(grouping, 'fsl')
+    (unit,) = to_preproc_units(grouping, EDDY_TOPUP)
     assert unit.output_name == 'sub-01'
     assert unit.has_bidirectional_dwi
     assert unit.pepolar_fieldmap_type == 'rpe_series'
     assert len(unit.dwi_files) == 4
-    scheme = concatenation_scheme(grouping, 'fsl')
+    scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {name: name for name in scheme}
 
 
@@ -106,7 +113,7 @@ def test_multiped_tortoise_splits_per_axis(tmp_path):
     """TORTOISE splits the pooled multi-axis cluster into one unit per axis.
 
     The four-direction cluster is a single pooled estimation (one TOPUP+eddy for
-    FSL), but DRBUDDI corrects one axis at a time. For the tortoise backend the
+    FSL), but DRBUDDI corrects one axis at a time. Under TORTOISE the
     adapter yields one PreprocUnit per phase-encoding axis, each an opposing
     pair seeing only its own axis, and the concatenation scheme maps both to the
     shared final output so the corrected results are recombined by the merge.
@@ -115,11 +122,11 @@ def test_multiped_tortoise_splits_per_axis(tmp_path):
     grouping = build_dwi_grouping(layout, subject_data, strict=False)
 
     # FSL keeps one pooled unit, identity scheme.
-    fsl_units = to_preproc_units(grouping, backend='fsl')
+    fsl_units = to_preproc_units(grouping, EDDY_TOPUP)
     assert [unit.output_name for unit in fsl_units] == ['sub-01']
 
     # TORTOISE: one unit per axis, both bidirectional, both -> 'sub-01'.
-    units = to_preproc_units(grouping, backend='tortoise')
+    units = to_preproc_units(grouping, TORTOISE_DRBUDDI)
     assert len(units) == 2
     assert all(unit.has_bidirectional_dwi for unit in units)
     assert {unit.pe_axis for unit in units} == {'i', 'j'}
@@ -130,7 +137,7 @@ def test_multiped_tortoise_splits_per_axis(tmp_path):
         }
         assert unit.extra_b0 == ()
 
-    scheme = concatenation_scheme(grouping, backend='tortoise')
+    scheme = concatenation_scheme(grouping, TORTOISE_DRBUDDI)
     assert set(scheme) == {unit.output_name for unit in units}  # keyed by unit name
     assert len(scheme) == 2  # two distinct per-axis unit names
     assert set(scheme.values()) == {'sub-01'}
@@ -146,9 +153,9 @@ def test_multi_readout_splits_per_pair(tmp_path):
     """
     grouping = load_scenario('multi_readout', tmp_path, strict=False)
 
-    assert [unit.output_name for unit in to_preproc_units(grouping, backend='fsl')] == ['sub-01']
+    assert [unit.output_name for unit in to_preproc_units(grouping, EDDY_TOPUP)] == ['sub-01']
 
-    units = to_preproc_units(grouping, backend='tortoise')
+    units = to_preproc_units(grouping, TORTOISE_DRBUDDI)
     assert {unit.output_name for unit in units} == {'sub-01_acq-fast', 'sub-01_acq-slow'}
     for unit in units:
         assert unit.has_bidirectional_dwi
@@ -157,12 +164,12 @@ def test_multi_readout_splits_per_pair(tmp_path):
         assert len(readouts) == 1  # one readout time per split unit
         assert unit.extra_b0 == ()
 
-    scheme = concatenation_scheme(grouping, backend='tortoise')
+    scheme = concatenation_scheme(grouping, TORTOISE_DRBUDDI)
     assert scheme == {'sub-01_acq-fast': 'sub-01', 'sub-01_acq-slow': 'sub-01'}
 
     # The pooled FSL/mixed unit is multi-group (mixed skips DRBUDDI for it); each
     # per-pair TORTOISE sub-unit is a single blip pair that DRBUDDI can consume.
-    (pooled,) = to_preproc_units(grouping, backend='fsl')
+    (pooled,) = to_preproc_units(grouping, EDDY_TOPUP)
     assert not pooled.is_single_blip_pair
     assert all(unit.is_single_blip_pair for unit in units)
 
@@ -180,7 +187,7 @@ def test_single_unit_acq_output_exposes_multipartid_label(tmp_path):
     grouping = load_scenario('virtual_acq_multipart', tmp_path, strict=False)
 
     # Every output here is a single correction unit (no cross-unit merge).
-    scheme = concatenation_scheme(grouping, backend='fsl')
+    scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {
         'sub-01_dir-AP': 'sub-01_acq-solo_dir-AP',
         'sub-01': 'sub-01_acq-pair',
@@ -199,7 +206,7 @@ def test_partial_pair_routes_pair_and_singleton(tmp_path):
     """
     grouping = load_scenario('partial_pair', tmp_path, strict=False)
 
-    units = {unit.output_name: unit for unit in to_preproc_units(grouping, backend='tortoise')}
+    units = {unit.output_name: unit for unit in to_preproc_units(grouping, TORTOISE_DRBUDDI)}
     assert set(units) == {'sub-01_acq-fast', 'sub-01_acq-slow_dir-AP'}
 
     pair = units['sub-01_acq-fast']
@@ -210,9 +217,9 @@ def test_partial_pair_routes_pair_and_singleton(tmp_path):
     assert singleton.estimation is None  # fieldmap-less -> T2Wreg / HMC-only
     assert not singleton.has_scanner_measured_fieldmap
 
-    assert set(concatenation_scheme(grouping, backend='tortoise').values()) == {'sub-01'}
+    assert set(concatenation_scheme(grouping, TORTOISE_DRBUDDI).values()) == {'sub-01'}
     # FSL keeps the single pooled unit.
-    assert [unit.output_name for unit in to_preproc_units(grouping, backend='fsl')] == ['sub-01']
+    assert [unit.output_name for unit in to_preproc_units(grouping, EDDY_TOPUP)] == ['sub-01']
 
 
 def test_relpaths_curation_outranks_reverse_pe(tmp_path):
@@ -225,7 +232,7 @@ def test_relpaths_curation_outranks_reverse_pe(tmp_path):
     layout, subject_data = _load_skeleton('skeleton_complex_relpaths', tmp_path)
     grouping = build_dwi_grouping(layout, subject_data, strict=False)
 
-    units = {unit.output_name: unit for unit in to_preproc_units(grouping, 'fsl')}
+    units = {unit.output_name: unit for unit in to_preproc_units(grouping, EDDY_TOPUP)}
     assert set(units) == {'sub-01_dir-AP', 'sub-01_dir-PA'}
 
     ap = units['sub-01_dir-AP']
@@ -240,7 +247,8 @@ def test_relpaths_curation_outranks_reverse_pe(tmp_path):
 
 
 def test_identity_concatenation_scheme(tmp_path):
-    scheme = concatenation_scheme(load_scenario('mixed_trt', tmp_path, strict=False))
+    grouping = load_scenario('mixed_trt', tmp_path, strict=False)
+    scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {name: name for name in scheme}
 
 
@@ -391,15 +399,26 @@ def test_sidecar_overrides_preserve_exact_readout_time():
 def test_concatenation_scheme_multi_unit(tmp_path):
     """Two corrected units in one final output map to the shared final name."""
     grouping = load_scenario('two_gre_fmaps', tmp_path, strict=False)
-    scheme = concatenation_scheme(grouping)
+    scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {
         'sub-01_dir-AP_run-1': 'sub-01_dir-AP',
         'sub-01_dir-AP_run-2': 'sub-01_dir-AP',
     }
-    assert {unit.output_name for unit in to_preproc_units(grouping)} == set(scheme)
+    assert {unit.output_name for unit in to_preproc_units(grouping, EDDY_TOPUP)} == set(scheme)
 
 
 def test_concatenation_scheme_identity_for_single_unit(tmp_path):
     """A single-unit output maps to itself."""
-    scheme = concatenation_scheme(load_scenario('hcp_style', tmp_path, strict=False))
+    grouping = load_scenario('hcp_style', tmp_path, strict=False)
+    scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {'sub-01': 'sub-01'}
+
+
+def test_decomposition_is_driven_by_the_capability_table(tmp_path):
+    # SHORELine must decompose a cross-axis PEPOLAR unit per blip pair purely
+    # because its capability row says so - there is no backend name to branch on.
+    grouping = load_scenario('cross_axis_b0field', tmp_path, strict=False)
+    shoreline = selection_for_config('shoreline', 'drbuddi')
+    assert HMC_CAPABILITIES[HmcMethod.SHORELINE].decomposes_pepolar_pairs
+    assert not HMC_CAPABILITIES[HmcMethod.EDDY].decomposes_pepolar_pairs
+    assert len(to_preproc_units(grouping, shoreline)) > len(to_preproc_units(grouping, EDDY_TOPUP))

@@ -12,9 +12,20 @@ import os.path as op
 import pytest
 from grouping_scenarios import basenames, load_scenario
 
-from qsiplan import GroupingError, Provenance, check_backend
+from qsiplan import GroupingError, Provenance
 from qsiplan.inference import build_grouping
+from qsiplan.methods import selection_for_config
 from qsiplan.models import CorrectionMethod
+from qsiplan.plan import compile_plan
+
+EDDY_TOPUP = selection_for_config('eddy', 'topup')
+EDDY_TOPUP_DRBUDDI = selection_for_config('eddy', 'topup+drbuddi')
+TORTOISE_DRBUDDI = selection_for_config('tortoise', 'drbuddi')
+
+
+def plan_issues(grouping, selection):
+    """The compiled plan's feasibility issues for one method selection."""
+    return list(compile_plan(grouping, selection).issues)
 
 
 def issue_codes(issues):
@@ -201,8 +212,8 @@ def test_cluster_multipart(tmp_path):
 
     # fsl pools all four signatures; DRBUDDI takes each matched blip pair (one per
     # readout time, 0.05 and 0.08) on its own, so this is feasible on both paths.
-    for backend in ('fsl', 'tortoise'):
-        assert not [i for i in check_backend(grouping, backend) if i.severity == 'error']
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI):
+        assert not [i for i in plan_issues(grouping, selection) if i.severity == 'error']
 
 
 def test_cluster_nomultipart(tmp_path):
@@ -243,9 +254,9 @@ def test_reshim_blocks_borrowing(tmp_path):
     codes = issue_codes(grouping.warnings)
     assert 'session-multiple-shims' in codes
 
-    # The uncorrected output draws a no-sdc warning on every backend
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert 'no-sdc' in issue_codes(check_backend(grouping, backend))
+    # The uncorrected output draws a no-sdc warning under every selection
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert 'no-sdc' in issue_codes(plan_issues(grouping, selection))
 
 
 def test_reshim_ignored(tmp_path):
@@ -280,9 +291,9 @@ def test_cross_axis_unpaired(tmp_path):
     (concat,) = grouping.concatenation_groups.values()
     assert concat.output_name == 'sub-01'
 
-    # Backend feasibility is check_backend's call, not the model's.
-    assert not [i for i in check_backend(grouping, 'fsl') if i.severity == 'error']
-    assert 'drbuddi-no-opposing-pair' in issue_codes(check_backend(grouping, 'tortoise'))
+    # Feasibility is the plan compiler's call, not the model's.
+    assert not [i for i in plan_issues(grouping, EDDY_TOPUP) if i.severity == 'error']
+    assert 'drbuddi-no-opposing-pair' in issue_codes(plan_issues(grouping, TORTOISE_DRBUDDI))
 
 
 def test_partial_curation(tmp_path):
@@ -390,7 +401,7 @@ def test_partial_multipart(tmp_path):
 
 
 def test_cross_axis_b0field(tmp_path):
-    """A curated identifier spanning axes works for every backend when each
+    """A curated identifier spanning axes works under every selection when each
     axis is its own opposing pair: TOPUP pools all four directions, and DRBUDDI
     (tortoise / mixed) corrects one axis at a time and recombines."""
     grouping = load_scenario('cross_axis_b0field', tmp_path)
@@ -400,8 +411,8 @@ def test_cross_axis_b0field(tmp_path):
     assert estimation.bidirectional_axes == {'i', 'j'}
     assert not grouping.errors
 
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        issues = check_backend(grouping, backend)
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        issues = plan_issues(grouping, selection)
         assert 'drbuddi-cross-axis' not in issue_codes(issues)
         assert not [i for i in issues if i.severity == 'error']
 
@@ -415,16 +426,16 @@ def test_partial_pair_fallback(tmp_path):
     TOPUP+eddy and does not flag it."""
     grouping = load_scenario('partial_pair', tmp_path)
 
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert not [i for i in check_backend(grouping, backend) if i.severity == 'error']
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert not [i for i in plan_issues(grouping, selection) if i.severity == 'error']
 
-    tortoise = check_backend(grouping, 'tortoise')
+    tortoise = plan_issues(grouping, TORTOISE_DRBUDDI)
     unpaired = [i for i in tortoise if i.code == 'drbuddi-no-opposing-pair']
     assert unpaired
     assert all(i.severity == 'warning' for i in unpaired)
     # On the mixed path the singleton is corrected by TOPUP+eddy; the multi-group
     # unit just gets single-stage (the single-pass DRBUDDI refinement is skipped).
-    mixed = check_backend(grouping, 'mixed')
+    mixed = plan_issues(grouping, EDDY_TOPUP_DRBUDDI)
     assert 'drbuddi-no-opposing-pair' not in issue_codes(mixed)
     assert 'drbuddi-refinement-multigroup' in issue_codes(mixed)
 
@@ -484,8 +495,8 @@ def test_virtual_acq_multipart_shared_field(tmp_path):
     assert 'estimation-spans-outputs' in codes
 
     # Borrowing is fine on TOPUP+eddy and on DRBUDDI (solo falls back to T2Wreg).
-    for backend in ('fsl', 'tortoise'):
-        assert not [i for i in check_backend(grouping, backend) if i.severity == 'error']
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI):
+        assert not [i for i in plan_issues(grouping, selection) if i.severity == 'error']
 
 
 def test_virtual_acq_isolated_fields(tmp_path):
@@ -547,8 +558,8 @@ def test_gre_phasediff(tmp_path):
     assert grouping.application[dwi_path] == estimation.b0field_id
 
     # GRE routes are fine on fsl/tortoise; mixed warns that DRBUDDI adds nothing
-    assert not check_backend(grouping, 'fsl')
-    assert 'mixed-non-pepolar' in issue_codes(check_backend(grouping, 'mixed'))
+    assert not plan_issues(grouping, EDDY_TOPUP)
+    assert 'mixed-non-pepolar' in issue_codes(plan_issues(grouping, EDDY_TOPUP_DRBUDDI))
 
 
 def test_two_gre_fmaps(tmp_path):
@@ -624,9 +635,9 @@ def test_mixed_trt(tmp_path):
     # time matched within a blip pair, which these opposing PEs lack - but nothing
     # aborts: the TORTOISE path falls the series back to T2Wreg/HMC-only with a
     # warning, and the mixed path corrects via TOPUP+eddy.
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert not [i for i in check_backend(grouping, backend) if i.severity == 'error']
-    assert 'drbuddi-no-opposing-pair' in issue_codes(check_backend(grouping, 'tortoise'))
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert not [i for i in plan_issues(grouping, selection) if i.severity == 'error']
+    assert 'drbuddi-no-opposing-pair' in issue_codes(plan_issues(grouping, TORTOISE_DRBUDDI))
 
 
 def test_multi_session(tmp_path):
@@ -707,8 +718,8 @@ def test_fieldmapless_t2w_stays_uncorrected_by_default(tmp_path):
 
     assert not grouping.estimations
     assert set(grouping.application.values()) == {None}
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert 'no-sdc' in issue_codes(check_backend(grouping, backend))
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert 'no-sdc' in issue_codes(plan_issues(grouping, selection))
 
 
 def test_fieldmapless_t2w_explicit_t2w(tmp_path):
@@ -726,11 +737,11 @@ def test_fieldmapless_t2w_explicit_t2w(tmp_path):
     assert grouping.application_provenance[dwi_path] is Provenance.FORCED
 
     # tortoise executes T2Wreg; explicitly demanded, so fsl/mixed error
-    assert not check_backend(grouping, 'tortoise')
-    for backend in ('fsl', 'mixed'):
+    assert not plan_issues(grouping, TORTOISE_DRBUDDI)
+    for selection in (EDDY_TOPUP, EDDY_TOPUP_DRBUDDI):
         anat_issues = [
             issue
-            for issue in check_backend(grouping, backend)
+            for issue in plan_issues(grouping, selection)
             if issue.code == 'anat-sdc-unsupported'
         ]
         assert anat_issues
@@ -768,11 +779,11 @@ def test_auto_ladder_falls_back_to_t2w_without_a_t1w(tmp_path):
     assert grouping.application_provenance[dwi_path] is Provenance.INFERRED
 
     # Nobody demanded T2Wreg by name: tortoise executes it, fsl/mixed only warn.
-    assert not check_backend(grouping, 'tortoise')
-    for backend in ('fsl', 'mixed'):
+    assert not plan_issues(grouping, TORTOISE_DRBUDDI)
+    for selection in (EDDY_TOPUP, EDDY_TOPUP_DRBUDDI):
         anat_issues = [
             issue
-            for issue in check_backend(grouping, backend)
+            for issue in plan_issues(grouping, selection)
             if issue.code == 'anat-sdc-unsupported'
         ]
         assert anat_issues
@@ -791,8 +802,8 @@ def test_ignore_t2w_removes_the_t2w_from_indexing(tmp_path):
     assert not grouping.estimations
     assert set(grouping.application.values()) == {None}
     assert not grouping.anat_files('T2w')  # the T2w was never indexed
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert 'no-sdc' in issue_codes(check_backend(grouping, backend))
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert 'no-sdc' in issue_codes(plan_issues(grouping, selection))
 
 
 def test_auto_ladder_without_anatomicals_warns(tmp_path):
@@ -823,8 +834,8 @@ def test_fieldmapless_t1w_only(tmp_path):
 
     assert not grouping.estimations
     assert set(grouping.application.values()) == {None}
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert 'no-sdc' in issue_codes(check_backend(grouping, backend))
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert 'no-sdc' in issue_codes(plan_issues(grouping, selection))
 
 
 def test_fieldmapless_t1w_only_synb0(tmp_path):
@@ -840,10 +851,10 @@ def test_fieldmapless_t1w_only_synb0(tmp_path):
     dwi_path = grouping.dwi_files[0]
     assert grouping.application[dwi_path] == 'auto+synb0'
 
-    # The synthetic b=0 is a target every backend can consume: TOPUP's missing
+    # The synthetic b=0 is a target every selection can consume: TOPUP's missing
     # blip (fsl/mixed) or the T2Wreg registration target (tortoise/mixed)
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert not check_backend(grouping, backend)
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert not plan_issues(grouping, selection)
 
 
 def test_fieldmapless_t1w_only_invt1w(tmp_path):
@@ -859,10 +870,10 @@ def test_fieldmapless_t1w_only_invt1w(tmp_path):
     dwi_path = grouping.dwi_files[0]
     assert grouping.application[dwi_path] == 'auto+syn'
 
-    # SyN routes through init_sdc_wf on every backend: feasible everywhere (the
+    # SyN routes through init_sdc_wf under every selection: feasible everywhere (the
     # mixed path only warns that DRBUDDI has nothing to refine).
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        assert not [i for i in check_backend(grouping, backend) if i.severity == 'error']
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        assert not [i for i in plan_issues(grouping, selection) if i.severity == 'error']
 
 
 def test_syn_never_overrides_a_real_fieldmap(tmp_path):
@@ -928,15 +939,15 @@ def test_t2w_hcp_forced_t2w_overrides_fieldmap(tmp_path):
     assert 'auto+pepolar+j' in grouping.estimations
 
     # Demanded-but-unsupported is an error on fsl/mixed
-    for backend in ('fsl', 'mixed'):
+    for selection in (EDDY_TOPUP, EDDY_TOPUP_DRBUDDI):
         anat_issues = [
             issue
-            for issue in check_backend(grouping, backend)
+            for issue in plan_issues(grouping, selection)
             if issue.code == 'anat-sdc-unsupported'
         ]
         assert anat_issues
         assert anat_issues[0].severity == 'error'
-    assert not check_backend(grouping, 'tortoise')
+    assert not plan_issues(grouping, TORTOISE_DRBUDDI)
 
 
 def test_force_t2wreg_requires_t2w(tmp_path):
@@ -985,9 +996,11 @@ def test_curated_t2wreg(tmp_path):
     assert grouping.application[dwi_path] == 'anatreg'
     assert grouping.application_provenance[dwi_path] is Provenance.CURATED
 
-    assert not check_backend(grouping, 'tortoise')
+    assert not plan_issues(grouping, TORTOISE_DRBUDDI)
     anat_issues = [
-        issue for issue in check_backend(grouping, 'fsl') if issue.code == 'anat-sdc-unsupported'
+        issue
+        for issue in plan_issues(grouping, EDDY_TOPUP)
+        if issue.code == 'anat-sdc-unsupported'
     ]
     assert anat_issues
     assert anat_issues[0].severity == 'error'
@@ -1026,10 +1039,10 @@ def test_shell_mix(tmp_path):
     (concat,) = grouping.concatenation_groups.values()
     assert len(concat.dwi_files) == 2
 
-    for backend in ('fsl', 'mixed'):
-        codes = issue_codes(check_backend(grouping, backend))
+    for selection in (EDDY_TOPUP, EDDY_TOPUP_DRBUDDI):
+        codes = issue_codes(plan_issues(grouping, selection))
         assert 'eddy-requires-shelled' in codes
-    tortoise_issues = check_backend(grouping, 'tortoise')
+    tortoise_issues = plan_issues(grouping, TORTOISE_DRBUDDI)
     assert 'mixed-shelled-nonshelled' in issue_codes(tortoise_issues)
     assert all(issue.severity == 'warning' for issue in tortoise_issues)
 
@@ -1039,9 +1052,9 @@ def test_nonshelled_pair(tmp_path):
     grouping = load_scenario('nonshelled_pair', tmp_path)
 
     assert all(grouping.files[path].shelled is False for path in grouping.dwi_files)
-    for backend in ('fsl', 'mixed'):
-        assert 'eddy-requires-shelled' in issue_codes(check_backend(grouping, backend))
-    tortoise_codes = issue_codes(check_backend(grouping, 'tortoise'))
+    for selection in (EDDY_TOPUP, EDDY_TOPUP_DRBUDDI):
+        assert 'eddy-requires-shelled' in issue_codes(plan_issues(grouping, selection))
+    tortoise_codes = issue_codes(plan_issues(grouping, TORTOISE_DRBUDDI))
     assert 'mixed-shelled-nonshelled' not in tortoise_codes
     assert 'eddy-requires-shelled' not in tortoise_codes
 
@@ -1050,8 +1063,8 @@ def test_shelling_undetermined_skips_checks(tmp_path):
     """Fixtures without bval files leave shelled undetermined: no data checks."""
     grouping = load_scenario('hcp_style', tmp_path)
     assert all(grouping.files[path].shelled is None for path in grouping.dwi_files)
-    for backend in ('fsl', 'tortoise', 'mixed'):
-        codes = issue_codes(check_backend(grouping, backend))
+    for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
+        codes = issue_codes(plan_issues(grouping, selection))
         assert 'eddy-requires-shelled' not in codes
         assert 'mixed-shelled-nonshelled' not in codes
 
@@ -1115,18 +1128,22 @@ def test_mixed_refinement_needs_rpe_series(tmp_path):
 
     grouping = load_scenario('abcd_style', tmp_path)
     (issue,) = (
-        i for i in check_backend(grouping, 'mixed') if i.code == 'drbuddi-refinement-not-useful'
+        i
+        for i in plan_issues(grouping, EDDY_TOPUP_DRBUDDI)
+        if i.code == 'drbuddi-refinement-not-useful'
     )
     assert 'probably not useful' in issue.message
     assert 'single-stage' in issue.message
 
     grouping = load_scenario('abcd_t2w', tmp_path)
     (issue,) = (
-        i for i in check_backend(grouping, 'mixed') if i.code == 'drbuddi-refinement-not-useful'
+        i
+        for i in plan_issues(grouping, EDDY_TOPUP_DRBUDDI)
+        if i.code == 'drbuddi-refinement-not-useful'
     )
     assert 'single-stage' in issue.message
     assert 'no T2Wreg second stage' in issue.message
-    assert 'the eddy path has no T2Wreg stage' in describe_processing(grouping, 'mixed')
+    assert 'the eddy path has no T2Wreg stage' in describe_processing(grouping, EDDY_TOPUP_DRBUDDI)
 
 
 def test_mixed_refinement_with_rpe_series(tmp_path):
@@ -1134,8 +1151,10 @@ def test_mixed_refinement_with_rpe_series(tmp_path):
     from qsiplan import describe_processing
 
     grouping = load_scenario('t2w_hcp', tmp_path)
-    assert 'drbuddi-refinement-not-useful' not in issue_codes(check_backend(grouping, 'mixed'))
-    preview = describe_processing(grouping, 'mixed')
+    assert 'drbuddi-refinement-not-useful' not in issue_codes(
+        plan_issues(grouping, EDDY_TOPUP_DRBUDDI)
+    )
+    preview = describe_processing(grouping, EDDY_TOPUP_DRBUDDI)
     assert 'DRBUDDI re-estimates distortion along the j axis' in preview
     # The T2w still rides along as DRBUDDI's structural target
     assert 'structural registration target' in preview
@@ -1158,7 +1177,7 @@ def test_synb0_overrides_t2w_as_structural_target(tmp_path):
         'sub-01_dir-AP_run-2_dwi.nii.gz': 'auto+synb0',
     }
     assert grouping.synb0_requested
-    preview = describe_processing(grouping, 'tortoise')
+    preview = describe_processing(grouping, TORTOISE_DRBUDDI)
     assert 'a SyNb0 synthetic b=0 (from sub-01_T1w.nii.gz, in place of the T2w image)' in preview
 
 

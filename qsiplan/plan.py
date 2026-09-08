@@ -355,11 +355,9 @@ def _stages_for_unit(
 def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[GroupingIssue]:
     """The feasibility issues for ``selection``, one output at a time.
 
-    The rules and their message text mirror the legacy ``check_backend``
-    verbatim (golden reports freeze the prose); the branch conditions are
-    expressed in selection terms. The legacy backend equivalences are exact:
-    ``fsl``/``mixed`` is eddy (without/with DRBUDDI), ``tortoise`` is
-    everything else.
+    The message text is frozen by the golden reports; the branch conditions
+    are expressed in selection terms - eddy with or without a DRBUDDI
+    refinement, TORTOISE, SHORELine.
     """
     is_eddy = selection.hmc is HmcMethod.EDDY
     with_topup = is_eddy and SdcTool.TOPUP in selection.pepolar_tools
@@ -589,10 +587,9 @@ def _check_shelling(grouping, selection, multipart_id, concat) -> list[GroupingI
 def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> ExecutionPlan:
     """Compile the execution plan for ``selection`` over a finished grouping.
 
-    Pure: everything comes from the grouping and the selection. Run keys and
-    the run/assembly structure match the legacy adapters byte-for-byte
-    (``to_preproc_units``/``concatenation_scheme``), and ``issues`` match
-    ``check_backend`` - both pinned by the parity suite.
+    Pure: everything comes from the grouping and the selection. The adapter
+    views (``to_preproc_units``/``concatenation_scheme``) are derived from
+    this plan's runs and assemblies; the parity suite pins that derivation.
     """
     concat_of_unit = {
         unit_key: concat

@@ -1,36 +1,23 @@
-"""The method axes, capability registries, and legacy-vocabulary mapping."""
+"""The method axes, the capability registries, and the bridge from qsiprep's
+config vocabulary (``hmc_model``/``pepolar_method``) to a MethodSelection."""
 
 import itertools
 
 import pytest
 
+from qsiplan.cohort import COHORT_METHODS
 from qsiplan.methods import (
     HMC_CAPABILITIES,
     SDC_CAPABILITIES,
     HmcMethod,
     MethodSelection,
     SdcTool,
-    canonical_selection,
     selection_for_config,
 )
 from qsiplan.models import CorrectionMethod
-from qsiplan.validation import BACKENDS
 
 LEGACY_HMC_MODELS = ('eddy', 'tortoise', '3dSHORE', 'tensor', 'none')
 LEGACY_PEPOLAR_METHODS = ('TOPUP', 'DRBUDDI', 'TOPUP+DRBUDDI')
-
-
-@pytest.mark.parametrize(
-    ('hmc_model', 'pepolar_method'),
-    list(itertools.product(LEGACY_HMC_MODELS, LEGACY_PEPOLAR_METHODS)),
-)
-def test_legacy_backend_matches_the_original_truth_table(hmc_model, pepolar_method):
-    """The historical backend_for_config rule, verbatim."""
-    if hmc_model == 'eddy':
-        expected = 'mixed' if 'DRBUDDI' in pepolar_method else 'fsl'
-    else:
-        expected = 'tortoise'
-    assert selection_for_config(hmc_model, pepolar_method).legacy_backend == expected
 
 
 @pytest.mark.parametrize(
@@ -98,29 +85,22 @@ def test_selection_validation():
 
 
 @pytest.mark.parametrize(
-    ('backend', 'expected_label'),
+    ('hmc', 'sdc', 'expected_label'),
     [
-        ('fsl', 'eddy + TOPUP'),
-        ('mixed', 'eddy + TOPUP→DRBUDDI'),
-        ('tortoise', 'TORTOISE + DRBUDDI'),
+        ('eddy', 'topup', 'eddy + TOPUP'),
+        ('eddy', 'topup+drbuddi', 'eddy + TOPUP→DRBUDDI'),
+        ('tortoise', 'drbuddi', 'TORTOISE + DRBUDDI'),
+        ('shoreline', 'drbuddi', 'SHORELine + DRBUDDI'),
     ],
 )
-def test_canonical_selection_previews_its_backend(backend, expected_label):
-    selection = canonical_selection(backend)
-    assert selection.legacy_backend == backend
-    assert selection.label() == expected_label
+def test_selection_labels_name_the_method_and_tool_chain(hmc, sdc, expected_label):
+    assert selection_for_config(hmc, sdc).label() == expected_label
 
 
-def test_canonical_selection_covers_all_backends():
-    for backend in BACKENDS:
-        assert canonical_selection(backend).legacy_backend == backend
-    with pytest.raises(ValueError, match='backend'):
-        canonical_selection('afni')
-
-
-def test_shoreline_label_is_first_class():
-    selection = selection_for_config('shoreline', 'drbuddi')
-    assert selection.label() == 'SHORELine + DRBUDDI'
+def test_cohort_labels_are_the_selections_own():
+    for _key, label, selection in COHORT_METHODS:
+        assert isinstance(selection, MethodSelection)
+        assert label == selection.label()
 
 
 def test_registries_are_total():

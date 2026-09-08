@@ -5,9 +5,9 @@ Two views are provided:
 - :func:`report_text` describes the grouping itself: which files were grouped
   with which, and whether each decision was curated, translated from
   IntendedFor, or inferred.
-- :func:`describe_processing` previews what a method selection (or a legacy
-  backend name) would actually do with the grouping, including any errors it
-  would raise. The grouping model itself knows nothing about methods; all
+- :func:`describe_processing` previews what a method selection would actually
+  do with the grouping, including any errors it would raise. The grouping
+  model itself knows nothing about methods; all
   tool knowledge lives here and in the plan compiler
   (:func:`~.plan.compile_plan`).
 
@@ -30,14 +30,7 @@ import re
 from collections import Counter, defaultdict
 from typing import NamedTuple
 
-from .methods import (
-    HmcMethod,
-    MethodSelection,
-    SdcTool,
-    as_selection,
-    canonical_selection,
-    selection_for_config,
-)
+from .methods import HmcMethod, MethodSelection, SdcTool, selection_for_config
 from .models import CorrectionMethod, DWIGrouping
 from .validation import (
     blip_pair_polarities,
@@ -191,8 +184,10 @@ def _describe_unit(lines, grouping, selection, multipart_id, unit, step) -> int:
             lines, grouping, selection, multipart_id, corrected, dgroups, step
         )
     if SdcTool.DRBUDDI in selection.pepolar_tools:
-        return _describe_mixed(lines, grouping, selection, multipart_id, corrected, dgroups, step)
-    return _describe_fsl(lines, grouping, multipart_id, corrected, dgroups, step)
+        return _describe_eddy_drbuddi(
+            lines, grouping, selection, multipart_id, corrected, dgroups, step
+        )
+    return _describe_eddy(lines, grouping, multipart_id, corrected, dgroups, step)
 
 
 def _output_step_lines(grouping, selection, multipart_id, backend_issues) -> list[str]:
@@ -235,16 +230,10 @@ def _output_step_lines(grouping, selection, multipart_id, backend_issues) -> lis
     return lines
 
 
-def describe_processing(grouping: DWIGrouping, selection) -> str:
-    """Preview what a method selection would do with this grouping.
-
-    ``selection`` is a :class:`~.methods.MethodSelection`, or a legacy backend
-    name (``'fsl'``/``'tortoise'``/``'mixed'``), which previews as its
-    canonical selection.
-    """
+def describe_processing(grouping: DWIGrouping, selection: MethodSelection) -> str:
+    """Preview what a method selection would do with this grouping."""
     from .plan import compile_plan
 
-    selection = as_selection(selection)
     backend_issues = compile_plan(grouping, selection).issues
 
     lines = []
@@ -272,7 +261,6 @@ def processing_steps(grouping: DWIGrouping, selection) -> dict[str, list[str]]:
     """
     from .plan import compile_plan
 
-    selection = as_selection(selection)
     backend_issues = compile_plan(grouping, selection).issues
     result = {}
     for multipart_id, concat in sorted(grouping.concatenation_groups.items()):
@@ -573,7 +561,7 @@ def _describe_drbuddi_pairs(
     return step
 
 
-def _describe_fsl(lines, grouping, multipart_id, corrected, dgroups, step):
+def _describe_eddy(lines, grouping, multipart_id, corrected, dgroups, step):
     kinds = _ids_by_kind(grouping, corrected)
     pepolar_ids = kinds.pepolar
     gre_ids = kinds.gre
@@ -816,7 +804,7 @@ def _describe_shoreline(lines, grouping, selection, multipart_id, corrected, dgr
     return step
 
 
-def _describe_mixed(lines, grouping, selection, multipart_id, corrected, dgroups, step):
+def _describe_eddy_drbuddi(lines, grouping, selection, multipart_id, corrected, dgroups, step):
     kinds = _ids_by_kind(grouping, corrected)
     pepolar_ids = kinds.pepolar
     with_topup = SdcTool.TOPUP in selection.pepolar_tools
@@ -979,9 +967,9 @@ def _describe_mixed(lines, grouping, selection, multipart_id, corrected, dgroups
 def default_preview_selections() -> tuple[MethodSelection, ...]:
     """The method selections every full report previews, in display order."""
     return (
-        canonical_selection('fsl'),
-        canonical_selection('tortoise'),
-        canonical_selection('mixed'),
+        selection_for_config('eddy', 'topup'),
+        selection_for_config('tortoise', 'drbuddi'),
+        selection_for_config('eddy', 'topup+drbuddi'),
         selection_for_config('shoreline', 'drbuddi'),
     )
 

@@ -11,9 +11,8 @@ unit is its own output.
 :func:`plan_preproc_units`/:func:`plan_concatenation_scheme` are the native
 entry points workflow construction uses over a compiled execution plan;
 :func:`to_preproc_units`/:func:`concatenation_scheme` are the conveniences
-the previews use, taking a :class:`~.methods.MethodSelection` (or a legacy
-backend name, normalized once at the boundary by
-:func:`~.methods.as_selection`).
+the previews use, compiling the plan for a :class:`~.methods.MethodSelection`
+themselves.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ import math
 import os.path as op
 from collections import Counter, defaultdict
 
-from .methods import HMC_CAPABILITIES, as_selection
+from .methods import HMC_CAPABILITIES
 from .models import (
     CorrectionMethod,
     DWIGrouping,
@@ -344,41 +343,36 @@ def _units_and_finals(grouping: DWIGrouping, selection):
 
     Shared by :func:`to_preproc_units` and :func:`concatenation_scheme` so the
     unit list and the concatenation scheme always agree on the (possibly split)
-    unit names. Both are views over the compiled execution plan. ``selection``
-    may be a :class:`~.methods.MethodSelection` or a legacy backend name; it is
-    normalized here, once, and nothing below sees the name.
+    unit names. Both are views over the compiled execution plan.
     """
     from .plan import compile_plan
 
-    plan = compile_plan(grouping, as_selection(selection))
+    plan = compile_plan(grouping, selection)
     scheme = plan_concatenation_scheme(plan)
     for unit in plan_preproc_units(grouping, plan):
         yield unit, scheme[unit.output_name]
 
 
-def to_preproc_units(grouping: DWIGrouping, backend='fsl') -> list[PreprocUnit]:
+def to_preproc_units(grouping: DWIGrouping, selection) -> list[PreprocUnit]:
     """One :class:`PreprocUnit` per correction unit: each is one HMC+SDC run.
 
-    ``backend`` is a :class:`~.methods.MethodSelection` or a legacy backend
-    name (``'fsl'``/``'tortoise'``/``'mixed'``). Under a method that routes
-    PEPOLAR through DRBUDDI, a PEPOLAR unit is broken into one unit per blip
-    group - complete pairs to DRBUDDI, unpaired groups to the fieldmap-less
-    fallback (see :func:`_decomposes_pepolar_pairs`); every other unit is one
-    PreprocUnit.
+    Under a method that routes PEPOLAR through DRBUDDI, a PEPOLAR unit is
+    broken into one unit per blip group - complete pairs to DRBUDDI, unpaired
+    groups to the fieldmap-less fallback (see :func:`_decomposes_pepolar_pairs`);
+    every other unit is one PreprocUnit.
     """
-    return [unit for unit, _final in _units_and_finals(grouping, backend)]
+    return [unit for unit, _final in _units_and_finals(grouping, selection)]
 
 
-def concatenation_scheme(grouping: DWIGrouping, backend='fsl') -> dict[str, str]:
+def concatenation_scheme(grouping: DWIGrouping, selection) -> dict[str, str]:
     """PreprocUnit output name -> final output name, from the model's packaging.
 
-    ``backend`` is a :class:`~.methods.MethodSelection` or a legacy backend
-    name. Identity for outputs with a single unit; a final output spanning
-    several units - including the per-axis sub-units of a per-pair DRBUDDI
-    split - maps each unit's preprocessed result to the shared final name, to
-    be combined by the distortion-group-merge workflow.
+    Identity for outputs with a single unit; a final output spanning several
+    units - including the per-axis sub-units of a per-pair DRBUDDI split - maps
+    each unit's preprocessed result to the shared final name, to be combined by
+    the distortion-group-merge workflow.
     """
-    return {unit.output_name: final for unit, final in _units_and_finals(grouping, backend)}
+    return {unit.output_name: final for unit, final in _units_and_finals(grouping, selection)}
 
 
 def _metadata_values_agree(first, second) -> bool:

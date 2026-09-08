@@ -2,9 +2,9 @@
 
 Head-motion correction (HMC) and susceptibility distortion correction (SDC)
 are independent choices: which software corrects motion, and which tool
-implements each unit's correction method. The legacy ``'fsl'``/``'tortoise'``/
-``'mixed'`` backend strings conflate the two - most visibly for SHORELine,
-which shares TORTOISE's DRBUDDI feasibility without ever running DIFFPREP.
+implements each unit's correction method. No single "backend" name can carry
+both - SHORELine shares TORTOISE's DRBUDDI feasibility without ever running
+DIFFPREP - so nothing here collapses them into one.
 
 :class:`MethodSelection` names the axes separately, and the capability
 registries record the per-tool facts that feasibility checks and the plan
@@ -225,13 +225,6 @@ class MethodSelection:
                 raise ValueError(f'{tool.value!r} is not a PEPOLAR tool')
 
     @property
-    def legacy_backend(self) -> str:
-        """The :data:`~.validation.BACKENDS` name this selection previews as."""
-        if self.hmc is HmcMethod.EDDY:
-            return 'mixed' if SdcTool.DRBUDDI in self.pepolar_tools else 'fsl'
-        return 'tortoise'
-
-    @property
     def legacy_hmc_model(self) -> str:
         """The legacy ``--hmc-model`` value equivalent to this selection."""
         if self.hmc is HmcMethod.EDDY:
@@ -396,33 +389,3 @@ def reachable_selections() -> list[MethodSelection]:
         )
     selections.append(selection_for_config('tortoise', 'drbuddi'))
     return selections
-
-
-#: The MethodSelection each legacy backend name previews as.
-_CANONICAL = {
-    'fsl': ('eddy', 'TOPUP'),
-    'mixed': ('eddy', 'TOPUP+DRBUDDI'),
-    'tortoise': ('tortoise', 'DRBUDDI'),
-}
-
-
-def canonical_selection(backend: str) -> MethodSelection:
-    """The representative :class:`MethodSelection` for a legacy backend name."""
-    if backend not in _CANONICAL:
-        raise ValueError(f'Unknown backend: {backend!r}')
-    return selection_for_config(*_CANONICAL[backend])
-
-
-def as_selection(selection) -> MethodSelection:
-    """Normalize a :class:`MethodSelection` or a legacy backend name to a selection.
-
-    The one bridge between the two vocabularies. Public entry points that
-    historically took ``'fsl'``/``'tortoise'``/``'mixed'`` accept either form
-    and normalize here at their boundary; everything behind them reasons about
-    the selection only. The legacy names are a lossy projection (every non-eddy
-    method collapses to ``'tortoise'``), so nothing internal should ever branch
-    on them again.
-    """
-    if isinstance(selection, MethodSelection):
-        return selection
-    return canonical_selection(selection)

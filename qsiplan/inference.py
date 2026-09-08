@@ -393,8 +393,8 @@ def resolve_estimations(
             # susceptibility field - opposite polarity on one axis is the
             # well-conditioned special case, not a requirement - so ALL
             # differing-PE series in the bucket estimate one field together.
-            # Whether a backend can consume the resulting shape (multiple
-            # axes, unpaired polarities) is check_backend's business.
+            # Whether a method can consume the resulting shape (multiple
+            # axes, unpaired polarities) is the plan compiler's business.
             axes = ''.join(sorted({record.signature.pe_axis for record in encoded}))
             id_parts = [AUTO_PREFIX + 'pepolar']
             if session:
