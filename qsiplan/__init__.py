@@ -65,6 +65,9 @@ from .methods import (
     selection_for_config,
 )
 from .models import (
+    ANAT_REFERENCE_CHOICES,
+    ANAT_REFERENCES,
+    AnatReference,
     ConcatenationGroup,
     CorrectionMethod,
     DistortionGroup,
@@ -80,6 +83,9 @@ from .report import describe_processing, full_report, report_text
 from .validation import BACKENDS, GroupingError, GroupingIssue, check_backend, raise_for_errors
 
 __all__ = [
+    'ANAT_REFERENCE_CHOICES',
+    'ANAT_REFERENCES',
+    'AnatReference',
     'BACKENDS',
     'Bids2TableCatalog',
     'HMC_CAPABILITIES',

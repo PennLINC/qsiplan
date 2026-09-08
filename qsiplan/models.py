@@ -68,6 +68,114 @@ class CorrectionMethod(enum.StrEnum):
 
 
 @dataclasses.dataclass(frozen=True)
+class AnatReference:
+    """One anatomical-derived source image ``--sdc-anat-reference`` can select.
+
+    The single description of a fieldmap-less SDC reference. Every place that
+    spells the reference set - the CLI choices, the key parser, the explorer
+    grid and dropdown, the inference ladder and its error messages, and the
+    structural-target vocabulary - derives from :data:`ANAT_REFERENCES`, so
+    adding a reference is one row here and cannot be forgotten elsewhere.
+    """
+
+    #: The ``--sdc-anat-reference`` value (``'synb0'``).
+    name: str
+    #: The estimation method the reference produces.
+    method: CorrectionMethod
+    #: The anatomical image it needs (``'T1w'`` / ``'T2w'``).
+    source_suffix: str
+    #: The estimation-id stem (``auto+<id_stem>[+ses-<label>]``).
+    id_stem: str
+    #: The target-kind name registration-based plan stages carry.
+    structural_target: str
+    #: ``(code, message)`` for target series lacking a PhaseEncodingDirection,
+    #: or ``None`` when the reference is a pure registration and needs none.
+    pedir_issue: tuple[str, str] | None
+    #: ``(code, message)`` when the subject lacks ``source_suffix``.
+    missing_anat_issue: tuple[str, str]
+    #: Position in the ``'auto'`` ladder (lower wins); ``None`` = explicit only.
+    auto_rank: int | None
+    #: Help-text fragment.
+    description: str
+
+
+#: The concrete references, in ``'auto'``-ladder order. ``'none'`` and
+#: ``'auto'`` are meta-values handled around this table, never rows in it.
+ANAT_REFERENCES: dict[str, AnatReference] = {
+    reference.name: reference
+    for reference in (
+        AnatReference(
+            name='synb0',
+            method=CorrectionMethod.SYNB0,
+            source_suffix='T1w',
+            id_stem='synb0',
+            structural_target='synb0',
+            pedir_issue=(
+                'synb0-missing-pedir',
+                'SyNb0 was requested, but these DWI series have no '
+                'PhaseEncodingDirection, which the synthetic-b=0 correction '
+                'requires.',
+            ),
+            missing_anat_issue=(
+                'synb0-requires-t1w',
+                'SyNb0 was requested, but this subject has no T1w image to '
+                'synthesize an undistorted b=0 from.',
+            ),
+            auto_rank=1,
+            description='synthesizes an undistorted b=0 from the T1w',
+        ),
+        AnatReference(
+            name='t2w',
+            method=CorrectionMethod.T2WREG,
+            source_suffix='T2w',
+            id_stem='t2wreg',
+            structural_target='t2w',
+            # T2Wreg is a registration, not a correction along an encoding
+            # axis, so it needs no PhaseEncodingDirection.
+            pedir_issue=None,
+            missing_anat_issue=(
+                't2wreg-requires-t2w',
+                'T2w-registration SDC (T2Wreg) was requested, but this subject has no T2w image.',
+            ),
+            auto_rank=2,
+            description='uses the real T2w (TORTOISE T2Wreg)',
+        ),
+        AnatReference(
+            name='invt1w',
+            method=CorrectionMethod.NIPREPS_SYN,
+            source_suffix='T1w',
+            id_stem='syn',
+            structural_target='t1w',
+            pedir_issue=(
+                'syn-missing-pedir',
+                'SyN-SDC was requested, but these DWI series have no '
+                'PhaseEncodingDirection, which the fieldmap-less SyN correction '
+                'requires.',
+            ),
+            missing_anat_issue=(
+                'syn-requires-t1w',
+                'SyN-SDC was requested, but this subject has no T1w image to '
+                'register against a template.',
+            ),
+            auto_rank=None,
+            description='uses the inverted-contrast T1w (nipreps-style SyN prior)',
+        ),
+    )
+}
+
+#: Everything ``--sdc-anat-reference`` accepts: the meta-values plus the table.
+ANAT_REFERENCE_CHOICES: tuple[str, ...] = ('none', 'auto', *ANAT_REFERENCES)
+
+#: The references ``'auto'`` may pick, best first.
+AUTO_ANAT_REFERENCES: tuple[AnatReference, ...] = tuple(
+    sorted(
+        (reference for reference in ANAT_REFERENCES.values() if reference.auto_rank is not None),
+        key=lambda reference: reference.auto_rank,
+    )
+)
+
+
+@dataclasses.dataclass(frozen=True)
 class DistortionSignature:
     """The acquisition parameters that determine a susceptibility distortion.
 

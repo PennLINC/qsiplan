@@ -27,7 +27,13 @@ import os.path as op
 
 from .adapters import PreprocUnit, _decompose_unit, _decomposes_on_tortoise
 from .methods import HMC_CAPABILITIES, HmcMethod, MethodSelection, SdcTool
-from .models import CorrectionMethod, DWIGrouping, FieldmapEstimation, Provenance
+from .models import (
+    ANAT_REFERENCES,
+    CorrectionMethod,
+    DWIGrouping,
+    FieldmapEstimation,
+    Provenance,
+)
 from .validation import (
     GroupingIssue,
     _pepolar_signature_count,
@@ -209,7 +215,9 @@ def _pepolar_stages(
     grouping: DWIGrouping, selection: MethodSelection, unit: PreprocUnit
 ) -> list[PlanStage]:
     """The stage sequence for a PEPOLAR-corrected unit under ``selection``."""
-    t2w = 't2w' if grouping.anat_files('T2w') else None
+    t2w_reference = ANAT_REFERENCES['t2w']
+    has_t2w = bool(grouping.anat_files(t2w_reference.source_suffix))
+    t2w = t2w_reference.structural_target if has_t2w else None
     estimation = unit.estimation
     common = {
         'method': CorrectionMethod.PEPOLAR,
@@ -292,7 +300,9 @@ def _stages_for_unit(
                 method=unit.method,
                 estimation=estimation.b0field_id,
                 fieldmap_sources=tuple(estimation.sources),
-                structural_target='t1w' if unit.is_nipreps_syn else None,
+                structural_target=(
+                    ANAT_REFERENCES['invt1w'].structural_target if unit.is_nipreps_syn else None
+                ),
             ),
         )
 
@@ -313,7 +323,7 @@ def _stages_for_unit(
                 method=CorrectionMethod.SYNB0,
                 estimation=estimation.b0field_id,
                 fieldmap_sources=tuple(estimation.sources),
-                structural_target='synb0',
+                structural_target=ANAT_REFERENCES['synb0'].structural_target,
             ),
             PlanStage(
                 index=1, role=StageRole.HMC_WITH_FIELD, tool=HmcMethod.EDDY.value, consumes=0

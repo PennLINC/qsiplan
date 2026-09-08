@@ -32,7 +32,7 @@ import html
 from .bids import find_bval, find_bvec
 from .metadata import B0_THRESHOLD, read_bvals_bvecs
 from .methods import reachable_selections
-from .models import CorrectionMethod, DWIGrouping, GroupingPolicy, Provenance
+from .models import ANAT_REFERENCES, CorrectionMethod, DWIGrouping, GroupingPolicy, Provenance
 from .plan import compile_plan
 from .report import processing_steps, shell_label
 from .viz.pipeline import _embedded_json, pipeline_assets, pipeline_div, plan_payload
@@ -996,9 +996,7 @@ def _policy_controls(policy: GroupingPolicy) -> str:
         + '<label>--sdc-anat-reference <select class="ctl-policy">'
         + option('', 'none', not sdc_anat_reference)
         + anat_option('auto')
-        + anat_option('synb0')
-        + anat_option('t2w')
-        + anat_option('invt1w')
+        + ''.join(anat_option(name) for name in ANAT_REFERENCES)
         + '</select></label>'
         + '<label>--distortion-group-merge <select class="ctl-policy">'
         + option('', 'concat', merge == 'concat')

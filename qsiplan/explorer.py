@@ -24,7 +24,7 @@ import itertools
 import json
 
 from .inference import build_grouping
-from .models import DWIGrouping, FileRecord, GroupingPolicy
+from .models import ANAT_REFERENCES, DWIGrouping, FileRecord, GroupingPolicy
 
 
 def canonical_explorer_policy(policy: GroupingPolicy | None = None) -> GroupingPolicy:
@@ -76,13 +76,9 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
         (
             ('none', False),
             ('auto', False),
-            ('synb0', False),
-            ('t2w', False),
-            ('invt1w', False),
+            *((name, False) for name in ANAT_REFERENCES),
             ('auto', True),
-            ('synb0', True),
-            ('t2w', True),
-            ('invt1w', True),
+            *((name, True) for name in ANAT_REFERENCES),
         ),
         ('concat', 'average', 'none'),
     ):

@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 
-from .models import CorrectionMethod, GroupingPolicy
+from .models import ANAT_REFERENCE_CHOICES, CorrectionMethod, GroupingPolicy
 
 
 class HmcMethod(enum.StrEnum):
@@ -321,8 +321,7 @@ def parse_combined_key(key: str):
             else:
                 if name == 'distortion-group-merge' and value not in ('concat', 'average', 'none'):
                     raise ValueError(f'Unknown {name} value: {value!r}')
-                anat_values = ('none', 'auto', 'synb0', 't2w', 'invt1w')
-                if name == 'sdc-anat-reference' and value not in anat_values:
+                if name == 'sdc-anat-reference' and value not in ANAT_REFERENCE_CHOICES:
                     raise ValueError(f'Unknown {name} value: {value!r}')
                 policy_kwargs[field.name] = value
         else:

@@ -16,7 +16,7 @@ from __future__ import annotations
 import dataclasses
 from collections import defaultdict
 
-from .models import DWIGrouping, FieldmapEstimation
+from .models import ANAT_REFERENCES, DWIGrouping, FieldmapEstimation
 
 #: Backends a grouping can be previewed/validated against.
 BACKENDS = ('fsl', 'tortoise', 'mixed')
@@ -139,12 +139,13 @@ def structural_target(grouping: DWIGrouping) -> tuple[str, list[str]] | None:
     over a real T2w, since its contrast matches the b=0 exactly) or ``'t2w'``;
     ``None`` when neither is available.
     """
-    t1ws = grouping.anat_files('T1w')
+    synb0, t2w = ANAT_REFERENCES['synb0'], ANAT_REFERENCES['t2w']
+    t1ws = grouping.anat_files(synb0.source_suffix)
     if grouping.synb0_requested and t1ws:
-        return 'synb0', t1ws
-    t2ws = grouping.anat_files('T2w')
+        return synb0.structural_target, t1ws
+    t2ws = grouping.anat_files(t2w.source_suffix)
     if t2ws:
-        return 't2w', t2ws
+        return t2w.structural_target, t2ws
     return None
 
 
