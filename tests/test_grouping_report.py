@@ -85,6 +85,8 @@ GOLDEN_CASES = [
     ('nonshelled_pair', {}, 'nonshelled_pair'),
     # Complex-valued (part-mag/part-phase) acquisitions: phase is a companion,
     # named under its magnitude and never listed as a series or a source.
+    # nibs_style is also non-shelled: eddy is refused and TORTOISE is its HMC.
+    ('nibs_style', {}, 'nibs_style'),
     ('complex_pepolar', {}, 'complex_pepolar'),
     ('complex_realimag', {}, 'complex_realimag'),
 ]
