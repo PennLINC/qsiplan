@@ -995,6 +995,7 @@ def _policy_controls(policy: GroupingPolicy) -> str:
         + ignore_group
         + '<label>--sdc-anat-reference <select class="ctl-policy">'
         + option('', 'none', not sdc_anat_reference)
+        + anat_option('auto')
         + anat_option('synb0')
         + anat_option('t2w')
         + anat_option('invt1w')

@@ -47,11 +47,13 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
     (``--separate-all-dwis`` and the ``--ignore`` values fieldmaps/pepolar-dwis/
     t2w/shims/fov), the anatomical-SDC axis as native ``(sdc_anat_reference,
     force_sdc_anat_reference)`` pairs - every method as a fallback plus every method
-    forced; ``('none', True)`` is invalid and excluded, and ``'auto'`` is
-    excluded because it always content-dedups with the concrete value it
-    resolves to - and the distortion-group merge strategy. The one field
-    outside the grid (``ignore_sdc``) carries ``base``'s value through every
-    combination.
+    forced, and ``'auto'`` alongside them; ``('none', True)`` is the only
+    invalid pair and is excluded. ``'auto'`` is a first-class cell, not an
+    alias: it resolves per session (:func:`~.inference.resolve_fieldmapless`),
+    so on a subject whose sessions carry different anatomicals its grouping can
+    differ from every single concrete method - it content-dedups with one only
+    when they coincide. The one field outside the grid (``ignore_sdc``) carries
+    ``base``'s value through every combination.
     """
     base = canonical_explorer_policy(base)
     policies = []
@@ -73,9 +75,11 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
         (False, True),
         (
             ('none', False),
+            ('auto', False),
             ('synb0', False),
             ('t2w', False),
             ('invt1w', False),
+            ('auto', True),
             ('synb0', True),
             ('t2w', True),
             ('invt1w', True),

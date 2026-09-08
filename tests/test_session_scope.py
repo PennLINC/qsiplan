@@ -226,6 +226,22 @@ def test_scenario_e_sessionwise_matches_per_session_auto(tmp_path):
     assert _methods(sessionwise['sub-01_ses-02']) == {CorrectionMethod.T2WREG}
 
 
+def test_auto_grouping_distinct_from_concrete_methods_across_sessions(tmp_path):
+    """With per-session 'auto', a subject whose sessions carry different
+    anatomicals groups differently under 'auto' than under any single concrete
+    method - which is why the explorer keeps 'auto' as its own grid cell rather
+    than aliasing it to whatever it 'resolves' to."""
+    from qsiplan.explorer import grouping_signature
+
+    root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T2w']}})
+    sigs = {}
+    for ref in ('auto', 'synb0', 't2w'):
+        (grouping,) = _plan(root, '01', SessionScope(), sdc_anat_reference=ref).values()
+        sigs[ref] = grouping_signature(grouping)
+    assert sigs['auto'] != sigs['synb0']
+    assert sigs['auto'] != sigs['t2w']
+
+
 # --------------------------------------------------------------------------- #
 # The dashboard (--cohort-html) honors both axes
 # --------------------------------------------------------------------------- #
@@ -305,3 +321,14 @@ def test_explorer_page_title_carries_the_session(tmp_path):
     page = render_explorer_html(ses02, '01', session='02', index_issues=issues)
     assert '<title>DWI grouping explorer for sub-01_ses-02</title>' in page
     assert 'process sub-01 ses-02&rsquo;s diffusion data' in page  # h1 carries the session
+
+
+def test_serve_auto_base_policy_renders(tmp_path):
+    """The live server opens on an 'auto' base policy without the old KeyError."""
+    root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w']}})
+    app = ExplorerApp(
+        Bids2TableCatalog(root), ['01'], base_policy=GroupingPolicy(sdc_anat_reference='auto')
+    )
+    assert '/sub-01/view' in app.page('01')  # renders, no KeyError
+    view = app.view('01', 'sdc-anat-reference=auto&hmc-method=eddy&sdc-method=topup')
+    assert view['policyKey'] == 'sdc-anat-reference=auto'
