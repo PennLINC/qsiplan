@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections import defaultdict
 from itertools import combinations
 
-from .bids import is_bids_label
+from .bids import _parse_bids_name, is_bids_label
 from .models import (
     ANAT_REFERENCE_CHOICES,
     ANAT_REFERENCES,
@@ -62,14 +62,16 @@ _PROVENANCE_RANK = {
 
 
 def _entity_stem(path: str) -> str:
-    """Filename without extension and without the trailing suffix token.
+    """The entity portion of a filename - no extension, no suffix.
 
     ``sub-01_acq-x_phasediff.nii.gz`` and ``sub-01_acq-x_magnitude1.nii.gz``
     share the stem ``sub-01_acq-x``, which is how sidecar-companion files
-    (phasediff + magnitudes, phase1 + phase2) are recognized.
+    (phasediff + magnitudes, phase1 + phase2) are recognized. The split is the
+    package's one BIDS-name parser (:func:`~.bids._parse_bids_name`), so a
+    name with no entities at all falls back to its bare basename.
     """
-    fname = strip_nii_ext(path)
-    return fname.rsplit('_', 1)[0] if '_' in fname else fname
+    entities, _suffix, _extension = _parse_bids_name(path)
+    return '_'.join(f'{key}-{value}' for key, value in entities.items()) or strip_nii_ext(path)
 
 
 def _classify_method(records: list[FileRecord]) -> CorrectionMethod | None:
