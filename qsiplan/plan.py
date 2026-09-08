@@ -25,7 +25,7 @@ import dataclasses
 import enum
 import os.path as op
 
-from .adapters import PreprocUnit, _decompose_unit, _decomposes_on_tortoise
+from .adapters import PreprocUnit, _decompose_unit, _decomposes_pepolar_pairs
 from .methods import HMC_CAPABILITIES, HmcMethod, MethodSelection, SdcTool
 from .models import (
     ANAT_REFERENCES,
@@ -599,10 +599,6 @@ def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> Execution
         for concat in grouping.concatenation_groups.values()
         for unit_key in concat.correction_units
     }
-    decompose_backend = (
-        'tortoise' if HMC_CAPABILITIES[selection.hmc].decomposes_pepolar_pairs else 'fsl'
-    )
-
     runs: list[ProcessingRun] = []
     for unit_key in sorted(grouping.correction_units):
         unit = grouping.correction_units[unit_key]
@@ -610,7 +606,7 @@ def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> Execution
         concat = concat_of_unit.get(unit.key)
         output_group = concat.key if concat is not None else unit.key
 
-        if _decomposes_on_tortoise(grouping, unit, estimation, decompose_backend):
+        if _decomposes_pepolar_pairs(grouping, unit, estimation, selection):
             subunits = _decompose_unit(grouping, unit, estimation)
         else:
             subunits = [

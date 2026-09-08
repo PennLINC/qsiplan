@@ -20,7 +20,14 @@ import re
 from collections import Counter, defaultdict
 from typing import NamedTuple
 
-from .methods import HmcMethod, MethodSelection, SdcTool, canonical_selection, selection_for_config
+from .methods import (
+    HmcMethod,
+    MethodSelection,
+    SdcTool,
+    as_selection,
+    canonical_selection,
+    selection_for_config,
+)
 from .models import CorrectionMethod, DWIGrouping
 from .validation import (
     blip_pair_polarities,
@@ -163,13 +170,6 @@ def _split_polarities(dgroups, pair_key: tuple):
     return up, down
 
 
-def _as_selection(selection) -> MethodSelection:
-    """Normalize a legacy backend name to its canonical :class:`MethodSelection`."""
-    if isinstance(selection, MethodSelection):
-        return selection
-    return canonical_selection(selection)
-
-
 def _describe_unit(lines, grouping, selection, multipart_id, unit, step) -> int:
     """One correction unit's HMC+SDC steps; returns the next step number."""
     corrected = _unit_corrected(grouping, unit)
@@ -234,7 +234,7 @@ def describe_processing(grouping: DWIGrouping, selection) -> str:
     """
     from .plan import compile_plan
 
-    selection = _as_selection(selection)
+    selection = as_selection(selection)
     backend_issues = compile_plan(grouping, selection).issues
 
     lines = []
@@ -262,7 +262,7 @@ def processing_steps(grouping: DWIGrouping, selection) -> dict[str, list[str]]:
     """
     from .plan import compile_plan
 
-    selection = _as_selection(selection)
+    selection = as_selection(selection)
     backend_issues = compile_plan(grouping, selection).issues
     result = {}
     for multipart_id, concat in sorted(grouping.concatenation_groups.items()):

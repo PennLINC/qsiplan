@@ -5,10 +5,10 @@ Two layers of checks live here:
 1. **Grouping-time rules** are applied while a :class:`~.models.DWIGrouping`
    is being built (called from ``inference.py``). They are about the data
    itself and hold no matter which processing software runs later.
-2. **Backend feasibility checks** (:func:`check_backend`) are pure functions
-   over a finished grouping that answer "could the fsl / tortoise / mixed
-   pipeline actually process this?". They keep all tool-specific knowledge
-   out of the grouping model.
+2. **Feasibility checks** (:func:`check_backend`) are pure functions over a
+   finished grouping that answer "could this method selection actually
+   process this?". They keep all tool-specific knowledge out of the grouping
+   model; the rules themselves live in the plan compiler.
 """
 
 from __future__ import annotations
@@ -18,14 +18,10 @@ from collections import defaultdict
 
 from .models import ANAT_REFERENCES, DWIGrouping, FieldmapEstimation
 
-#: Backends a grouping can be previewed/validated against.
+#: The legacy backend names, kept as a boundary vocabulary for callers that
+#: predate :class:`~.methods.MethodSelection`; each is a lossy stand-in for
+#: its :func:`~.methods.canonical_selection`. Nothing internal branches on them.
 BACKENDS = ('fsl', 'tortoise', 'mixed')
-
-BACKEND_DESCRIPTIONS = {
-    'fsl': 'FSL path (TOPUP fieldmap estimation + eddy HMC/SDC)',
-    'tortoise': 'TORTOISE path (DIFFPREP HMC + DRBUDDI SDC)',
-    'mixed': 'Two-stage path (TOPUP + eddy, then DRBUDDI or T2Wreg refinement)',
-}
 
 
 class GroupingError(RuntimeError):
@@ -311,18 +307,16 @@ def check_data_compatibility(
     return issues
 
 
-def check_backend(grouping: DWIGrouping, backend: str) -> list[GroupingIssue]:
-    """Validate a finished grouping against one processing backend.
+def check_backend(grouping: DWIGrouping, backend) -> list[GroupingIssue]:
+    """Validate a finished grouping against one method selection.
 
-    Returns issues only - never raises - so reports can show all three
-    backends side by side. The rules live in the plan compiler
-    (:func:`~.plan.compile_plan`); this returns the compiled plan's issues
-    for the backend's canonical method selection.
+    ``backend`` is a :class:`~.methods.MethodSelection` or a legacy backend
+    name from :data:`BACKENDS`. Returns issues only - never raises for data
+    problems - so reports can show several selections side by side. The rules
+    live in the plan compiler (:func:`~.plan.compile_plan`); this returns the
+    compiled plan's issues for the selection.
     """
-    if backend not in BACKENDS:
-        raise ValueError(f"Unknown backend '{backend}'. Choose from {BACKENDS}.")
-
-    from .methods import canonical_selection
+    from .methods import as_selection
     from .plan import compile_plan
 
-    return list(compile_plan(grouping, canonical_selection(backend)).issues)
+    return list(compile_plan(grouping, as_selection(backend)).issues)

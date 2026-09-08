@@ -10,8 +10,10 @@ unit is its own output.
 
 :func:`plan_preproc_units`/:func:`plan_concatenation_scheme` are the native
 entry points workflow construction uses over a compiled execution plan;
-:func:`to_preproc_units`/:func:`concatenation_scheme` are the backend-string
-conveniences the previews use.
+:func:`to_preproc_units`/:func:`concatenation_scheme` are the conveniences
+the previews use, taking a :class:`~.methods.MethodSelection` (or a legacy
+backend name, normalized once at the boundary by
+:func:`~.methods.as_selection`).
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import math
 import os.path as op
 from collections import Counter, defaultdict
 
+from .methods import HMC_CAPABILITIES, as_selection
 from .models import (
     CorrectionMethod,
     DWIGrouping,
@@ -217,21 +220,28 @@ def _blip_pair_key(grouping: DWIGrouping, path: str) -> tuple:
     return (sig.pe_axis, sig.readout_time, sig.shim)
 
 
-def _decomposes_on_tortoise(
-    grouping: DWIGrouping, unit, estimation: FieldmapEstimation | None, backend: str
+def _decomposes_pepolar_pairs(
+    grouping: DWIGrouping, unit, estimation: FieldmapEstimation | None, selection
 ) -> bool:
-    """True when TORTOISE must break a PEPOLAR unit into per-blip-group sub-units.
+    """True when the HMC method must break a PEPOLAR unit into per-blip-group sub-units.
 
     DRBUDDI corrects one matched blip pair - same axis, readout time and shim,
-    opposite polarity - at a time, so each of a unit's blip groups is routed on
-    its own: a complete pair to DRBUDDI, an unpaired group to the fieldmap-less
-    fallback (DIFFPREP T2Wreg with a T2w, else HMC-only). Decompose whenever the
-    unit spans more than one blip group, or any of its groups is unpaired; a lone
-    complete pair stays one DRBUDDI unit. Completeness is judged against the
-    estimation, so a borrowed opposite blip still counts. FSL/mixed keep the
-    pooled unit; backend knowledge lives here, never in the model.
+    opposite polarity - at a time, so methods that route PEPOLAR through it
+    (:attr:`~.methods.HmcCapabilities.decomposes_pepolar_pairs`: DIFFPREP and
+    SHORELine) handle each of a unit's blip groups on its own: a complete pair
+    to DRBUDDI, an unpaired group to the fieldmap-less fallback (DIFFPREP T2Wreg
+    with a T2w, else HMC-only). Decompose whenever the unit spans more than one
+    blip group, or any of its groups is unpaired; a lone complete pair stays one
+    DRBUDDI unit. Completeness is judged against the estimation, so a borrowed
+    opposite blip still counts. eddy keeps the pooled unit (TOPUP pools the
+    groups). The fact comes from the capability table, never from a backend
+    name.
     """
-    if backend != 'tortoise' or estimation is None or not estimation.is_pepolar:
+    if (
+        not HMC_CAPABILITIES[selection.hmc].decomposes_pepolar_pairs
+        or estimation is None
+        or not estimation.is_pepolar
+    ):
         return False
     pair_pols = blip_pair_polarities(grouping, estimation)
     unit_keys = {_blip_pair_key(grouping, path) for path in unit.dwi_files}
@@ -329,40 +339,44 @@ def plan_concatenation_scheme(plan) -> dict[str, str]:
     return {run.key: final_of.get(run.output_group, run.output_group) for run in plan.runs}
 
 
-def _units_and_finals(grouping: DWIGrouping, backend: str):
-    """Yield ``(PreprocUnit, final_output_name)`` for every unit, backend-aware.
+def _units_and_finals(grouping: DWIGrouping, selection):
+    """Yield ``(PreprocUnit, final_output_name)`` for every unit under ``selection``.
 
     Shared by :func:`to_preproc_units` and :func:`concatenation_scheme` so the
     unit list and the concatenation scheme always agree on the (possibly split)
-    unit names. Both are views over the compiled execution plan.
+    unit names. Both are views over the compiled execution plan. ``selection``
+    may be a :class:`~.methods.MethodSelection` or a legacy backend name; it is
+    normalized here, once, and nothing below sees the name.
     """
-    from .methods import canonical_selection
     from .plan import compile_plan
 
-    plan = compile_plan(grouping, canonical_selection(backend))
+    plan = compile_plan(grouping, as_selection(selection))
     scheme = plan_concatenation_scheme(plan)
     for unit in plan_preproc_units(grouping, plan):
         yield unit, scheme[unit.output_name]
 
 
-def to_preproc_units(grouping: DWIGrouping, backend: str = 'fsl') -> list[PreprocUnit]:
+def to_preproc_units(grouping: DWIGrouping, backend='fsl') -> list[PreprocUnit]:
     """One :class:`PreprocUnit` per correction unit: each is one HMC+SDC run.
 
-    For the ``tortoise`` backend a PEPOLAR unit is broken into one unit per blip
+    ``backend`` is a :class:`~.methods.MethodSelection` or a legacy backend
+    name (``'fsl'``/``'tortoise'``/``'mixed'``). Under a method that routes
+    PEPOLAR through DRBUDDI, a PEPOLAR unit is broken into one unit per blip
     group - complete pairs to DRBUDDI, unpaired groups to the fieldmap-less
-    fallback (see :func:`_decomposes_on_tortoise`); every other unit is one
+    fallback (see :func:`_decomposes_pepolar_pairs`); every other unit is one
     PreprocUnit.
     """
     return [unit for unit, _final in _units_and_finals(grouping, backend)]
 
 
-def concatenation_scheme(grouping: DWIGrouping, backend: str = 'fsl') -> dict[str, str]:
+def concatenation_scheme(grouping: DWIGrouping, backend='fsl') -> dict[str, str]:
     """PreprocUnit output name -> final output name, from the model's packaging.
 
-    Identity for outputs with a single unit; a final output spanning several
-    units - including the per-axis sub-units of a TORTOISE split - maps each
-    unit's preprocessed result to the shared final name, to be combined by the
-    distortion-group-merge workflow.
+    ``backend`` is a :class:`~.methods.MethodSelection` or a legacy backend
+    name. Identity for outputs with a single unit; a final output spanning
+    several units - including the per-axis sub-units of a per-pair DRBUDDI
+    split - maps each unit's preprocessed result to the shared final name, to
+    be combined by the distortion-group-merge workflow.
     """
     return {unit.output_name: final for unit, final in _units_and_finals(grouping, backend)}
 

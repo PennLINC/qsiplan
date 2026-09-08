@@ -411,3 +411,18 @@ def canonical_selection(backend: str) -> MethodSelection:
     if backend not in _CANONICAL:
         raise ValueError(f'Unknown backend: {backend!r}')
     return selection_for_config(*_CANONICAL[backend])
+
+
+def as_selection(selection) -> MethodSelection:
+    """Normalize a :class:`MethodSelection` or a legacy backend name to a selection.
+
+    The one bridge between the two vocabularies. Public entry points that
+    historically took ``'fsl'``/``'tortoise'``/``'mixed'`` accept either form
+    and normalize here at their boundary; everything behind them reasons about
+    the selection only. The legacy names are a lossy projection (every non-eddy
+    method collapses to ``'tortoise'``), so nothing internal should ever branch
+    on them again.
+    """
+    if isinstance(selection, MethodSelection):
+        return selection
+    return canonical_selection(selection)
