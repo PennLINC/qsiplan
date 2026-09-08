@@ -10,6 +10,16 @@ Two views are provided:
   would raise. The grouping model itself knows nothing about methods; all
   tool knowledge lives here and in the plan compiler
   (:func:`~.plan.compile_plan`).
+
+The preview prose exists at two deliberate granularities. The per-unit
+narratives (``_describe_*``) are the product: hand-written, data-rich text -
+blip-pair names and readout times, acquisition-parameter row counts, borrowed
+b=0 notes, *why* a refinement is skipped - frozen by the golden reports. The
+per-stage sentences (:func:`_stage_text` via :func:`plan_step_records`) are
+node labels for diagrams and JSON payloads, one short line per compiled
+:class:`~.plan.PlanStage`. They are not a duplicate of each other and are not
+meant to converge; what they *share* is factored (e.g. the per-pair DRBUDDI
+narration), and both draw their facts from the same compiled plan.
 """
 
 from __future__ import annotations
@@ -510,6 +520,59 @@ def _structural_note(grouping) -> str | None:
     )
 
 
+def _describe_drbuddi_pairs(
+    lines, grouping, multipart_id, pepolar_ids, dgroups, step, *, pipeline, fallback
+) -> int:
+    """Narrate per-blip-pair DRBUDDI correction for the methods that route PEPOLAR through it.
+
+    DIFFPREP and SHORELine both hand DRBUDDI one matched blip pair at a time
+    (:attr:`~.methods.HmcCapabilities.decomposes_pepolar_pairs`), so their
+    narration is identical apart from the ``pipeline`` name in the multi-pair
+    note and the ``fallback`` clause for groups with no opposing blip -
+    DIFFPREP can register those to a T2w, SHORELine cannot. Returns the next
+    step number.
+    """
+    for b0field_id in pepolar_ids:
+        estimation = grouping.estimations[b0field_id]
+        pairs = blip_pair_polarities(grouping, estimation)
+        complete = sorted(
+            (key for key, pols in pairs.items() if len(pols) == 2), key=blip_sort_key
+        )
+        unpaired = sorted((key for key, pols in pairs.items() if len(pols) < 2), key=blip_sort_key)
+        if len(complete) > 1:
+            labels = '; '.join(describe_blip_group(key) for key in complete)
+            lines.append(
+                f'     Estimation forms {len(complete)} blip pairs ({labels}); each is '
+                f'corrected in its own {pipeline} pipeline and the corrected '
+                'results are combined.'
+            )
+        axis_counts = Counter(key[0] for key in complete)
+        for key in complete:
+            up, down = _split_polarities(dgroups, key)
+            up_names = ', '.join(dgroup.key for dgroup in up) or 'borrowed series'
+            down_names = ', '.join(dgroup.key for dgroup in down) or 'borrowed series'
+            where = f'the {key[0]} axis'
+            if key[1] is not None and axis_counts[key[0]] > 1:
+                where += f' (TRT {key[1]:g}s)'
+            lines.append(
+                f'  {step}. DRBUDDI estimates distortion along {where} '
+                f'from the blip-up ({up_names}) and blip-down ({down_names}) '
+                'data and applies the correction to every volume.'
+            )
+            step += 1
+        if unpaired:
+            groups = '; '.join(describe_blip_group(key) for key in unpaired)
+            lines.append(f'  {step}. DRBUDDI has no opposing blip for {groups}, so {fallback}.')
+            step += 1
+        note = _borrow_note(grouping, multipart_id, b0field_id)
+        if note:
+            lines.append(f'     {note}')
+    structural = _structural_note(grouping)
+    if structural:
+        lines.append(structural)
+    return step
+
+
 def _describe_fsl(lines, grouping, multipart_id, corrected, dgroups, step):
     kinds = _ids_by_kind(grouping, corrected)
     pepolar_ids = kinds.pepolar
@@ -627,53 +690,20 @@ def _describe_tortoise(lines, grouping, multipart_id, corrected, dgroups, step):
     step += 1
 
     if pepolar_ids:
-        for b0field_id in pepolar_ids:
-            estimation = grouping.estimations[b0field_id]
-            pairs = blip_pair_polarities(grouping, estimation)
-            complete = sorted(
-                (key for key, pols in pairs.items() if len(pols) == 2), key=blip_sort_key
-            )
-            unpaired = sorted(
-                (key for key, pols in pairs.items() if len(pols) < 2), key=blip_sort_key
-            )
-            if len(complete) > 1:
-                labels = '; '.join(describe_blip_group(key) for key in complete)
-                lines.append(
-                    f'     Estimation forms {len(complete)} blip pairs ({labels}); each is '
-                    'corrected in its own DIFFPREP+DRBUDDI pipeline and the corrected '
-                    'results are combined.'
-                )
-            axis_counts = Counter(key[0] for key in complete)
-            for key in complete:
-                up, down = _split_polarities(dgroups, key)
-                up_names = ', '.join(dgroup.key for dgroup in up) or 'borrowed series'
-                down_names = ', '.join(dgroup.key for dgroup in down) or 'borrowed series'
-                where = f'the {key[0]} axis'
-                if key[1] is not None and axis_counts[key[0]] > 1:
-                    where += f' (TRT {key[1]:g}s)'
-                lines.append(
-                    f'  {step}. DRBUDDI estimates distortion along {where} '
-                    f'from the blip-up ({up_names}) and blip-down ({down_names}) '
-                    'data and applies the correction to every volume.'
-                )
-                step += 1
-            if unpaired:
-                groups = '; '.join(describe_blip_group(key) for key in unpaired)
-                fallback = (
-                    'DIFFPREP registers them to the T2w instead (T2Wreg)'
-                    if grouping.anat_files('T2w')
-                    else 'they are left uncorrected (no T2w for a T2Wreg fallback)'
-                )
-                lines.append(
-                    f'  {step}. DRBUDDI has no opposing blip for {groups}, so {fallback}.'
-                )
-                step += 1
-            note = _borrow_note(grouping, multipart_id, b0field_id)
-            if note:
-                lines.append(f'     {note}')
-        structural = _structural_note(grouping)
-        if structural:
-            lines.append(structural)
+        step = _describe_drbuddi_pairs(
+            lines,
+            grouping,
+            multipart_id,
+            pepolar_ids,
+            dgroups,
+            step,
+            pipeline='DIFFPREP+DRBUDDI',
+            fallback=(
+                'DIFFPREP registers them to the T2w instead (T2Wreg)'
+                if grouping.anat_files('T2w')
+                else 'they are left uncorrected (no T2w for a T2Wreg fallback)'
+            ),
+        )
     elif kinds.synb0:
         for b0field_id in kinds.synb0:
             estimation = grouping.estimations[b0field_id]
@@ -740,49 +770,16 @@ def _describe_shoreline(lines, grouping, selection, multipart_id, corrected, dgr
     step += 1
 
     if pepolar_ids:
-        for b0field_id in pepolar_ids:
-            estimation = grouping.estimations[b0field_id]
-            pairs = blip_pair_polarities(grouping, estimation)
-            complete = sorted(
-                (key for key, pols in pairs.items() if len(pols) == 2), key=blip_sort_key
-            )
-            unpaired = sorted(
-                (key for key, pols in pairs.items() if len(pols) < 2), key=blip_sort_key
-            )
-            if len(complete) > 1:
-                labels = '; '.join(describe_blip_group(key) for key in complete)
-                lines.append(
-                    f'     Estimation forms {len(complete)} blip pairs ({labels}); each is '
-                    'corrected in its own SHORELine+DRBUDDI pipeline and the corrected '
-                    'results are combined.'
-                )
-            axis_counts = Counter(key[0] for key in complete)
-            for key in complete:
-                up, down = _split_polarities(dgroups, key)
-                up_names = ', '.join(dgroup.key for dgroup in up) or 'borrowed series'
-                down_names = ', '.join(dgroup.key for dgroup in down) or 'borrowed series'
-                where = f'the {key[0]} axis'
-                if key[1] is not None and axis_counts[key[0]] > 1:
-                    where += f' (TRT {key[1]:g}s)'
-                lines.append(
-                    f'  {step}. DRBUDDI estimates distortion along {where} '
-                    f'from the blip-up ({up_names}) and blip-down ({down_names}) '
-                    'data and applies the correction to every volume.'
-                )
-                step += 1
-            if unpaired:
-                groups = '; '.join(describe_blip_group(key) for key in unpaired)
-                lines.append(
-                    f'  {step}. DRBUDDI has no opposing blip for {groups}, so those '
-                    'series are left uncorrected (SHORELine has no T2Wreg fallback).'
-                )
-                step += 1
-            note = _borrow_note(grouping, multipart_id, b0field_id)
-            if note:
-                lines.append(f'     {note}')
-        structural = _structural_note(grouping)
-        if structural:
-            lines.append(structural)
+        step = _describe_drbuddi_pairs(
+            lines,
+            grouping,
+            multipart_id,
+            pepolar_ids,
+            dgroups,
+            step,
+            pipeline='SHORELine+DRBUDDI',
+            fallback='those series are left uncorrected (SHORELine has no T2Wreg fallback)',
+        )
     elif gre_ids:
         for b0field_id in gre_ids:
             estimation = grouping.estimations[b0field_id]
