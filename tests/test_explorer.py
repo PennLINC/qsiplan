@@ -59,18 +59,37 @@ def test_combined_key_composes_both_axes():
 def test_reachable_policies_cover_the_grid():
     policies = reachable_policies()
     # separate + ignore(fieldmaps, pepolar-dwis, t2w, shims, fov)
-    # + anat-sdc (reference, forced) pairs(7) + merge(3)
-    assert len(policies) == 2 * 2 * 2 * 2 * 2 * 2 * 7 * 3
+    # + anat-sdc (reference, forced) pairs(9) + merge(3)
+    assert len(policies) == 2 * 2 * 2 * 2 * 2 * 2 * 9 * 3
     keys = {policy.policy_key() for policy in policies}
     assert len(keys) == len(policies)  # every combination spells uniquely
     assert '' in keys  # the all-defaults policy
-    # Forcing is only offered with a concrete method, and 'auto' never appears
-    # in the grid (it content-dedups with whatever it resolves to).
-    assert all(
-        policy.sdc_anat_reference != 'none' or not policy.force_sdc_anat_reference
-        for policy in policies
-    )
-    assert all(policy.sdc_anat_reference != 'auto' for policy in policies)
+    anat_pairs = {(p.sdc_anat_reference, p.force_sdc_anat_reference) for p in policies}
+    # 'none' is never forced (nothing to force); 'auto' is a first-class value,
+    # fallback and forced, because it resolves per session and so can produce a
+    # grouping distinct from any single concrete method.
+    assert ('none', True) not in anat_pairs
+    assert ('auto', False) in anat_pairs
+    assert ('auto', True) in anat_pairs
+
+
+def test_auto_initial_policy_renders_and_is_reachable(tmp_path):
+    """Regression: '--sdc-anat-reference auto' used to KeyError in the explorer
+    (auto was excluded from the grid); it is now a first-class grid cell."""
+    records, issues = _indexed('fieldmapless_t2w', tmp_path)  # has a T1w -> auto = synb0
+    auto = GroupingPolicy(sdc_anat_reference='auto')
+
+    grid = build_policy_grid(records, '01', base=auto, index_issues=issues)
+    assert auto.policy_key() in grid.policy_index
+    forced_auto = GroupingPolicy(sdc_anat_reference='auto', force_sdc_anat_reference=True)
+    assert forced_auto.policy_key() in grid.policy_index
+
+    # The static page (the --html / --cohort-html sibling path) renders, opens
+    # on auto's grouping, and offers 'auto' in the policy dropdown.
+    page = render_explorer_html(records, '01', index_issues=issues, initial_policy=auto)
+    assert '<option value="sdc-anat-reference=auto"' in page
+    index = _embedded_index(page)
+    assert index['policies']['sdc-anat-reference=auto']['sig'] is not None
 
 
 def test_cli_phrase_composes_ignore_as_one_flag():
