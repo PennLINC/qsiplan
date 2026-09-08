@@ -31,7 +31,7 @@ import dataclasses
 import enum
 
 from .methods import MethodSelection, selection_for_config
-from .models import GroupingPolicy
+from .models import ANAT_REFERENCE_CHOICES, GroupingPolicy
 from .scope import ANAT_MODELS, DEFAULT_ANAT_MODEL, SessionScope
 
 
@@ -208,7 +208,7 @@ PLAN_OPTIONS: tuple[PlanOption, ...] = (
         'default) disables anatomical SDC entirely; the engine consuming the '
         'reference is governed by --sdc-method/--hmc-method',
         policy_field='sdc_anat_reference',
-        choices=('none', 'auto', 'synb0', 't2w', 'invt1w'),
+        choices=ANAT_REFERENCE_CHOICES,
         default='none',
     ),
     PlanOption(

@@ -1,26 +1,23 @@
 """Parity harness for the execution-plan compiler.
 
-The compiler must reproduce the legacy routing byte-for-byte before anything
-consumes it: run keys, file sets and estimations against
-``to_preproc_units``; assemblies against ``concatenation_scheme``; issues
-against ``check_backend`` (order and text). Every scenario is checked under
-every canonical selection, plus the flag variants the golden reports cover.
-Stage shapes - the ordered estimate/HMC/refine sequences - are pinned
-separately for each method family.
+The adapter views - ``to_preproc_units`` (run keys, file sets, estimations)
+and ``concatenation_scheme`` (assemblies) - are derived from the compiled
+plan, and this harness pins that derivation: every scenario, plus the flag
+variants the golden reports cover, under each preview selection. Stage
+shapes - the ordered estimate/HMC/refine sequences - are pinned separately
+for each method family.
 """
 
-import itertools
 import json
 
 import pytest
 from grouping_scenarios import SCENARIOS, load_scenario
 
-from qsiplan import check_backend, concatenation_scheme, to_preproc_units
+from qsiplan import concatenation_scheme, to_preproc_units
 from qsiplan.integrity import check_plan
-from qsiplan.methods import canonical_selection, selection_for_config
+from qsiplan.methods import selection_for_config
 from qsiplan.models import CorrectionMethod
 from qsiplan.plan import ExecutionPlan, StageRole, compile_plan
-from qsiplan.validation import BACKENDS
 
 #: (scenario, build kwargs) - every scenario plain, plus the golden flag variants.
 CASES = [(scenario, {}) for scenario in SCENARIOS] + [
@@ -30,6 +27,13 @@ CASES = [(scenario, {}) for scenario in SCENARIOS] + [
     ('curated_t2wreg', {'sdc_anat_reference': 't2w', 'force_sdc_anat_reference': True}),
 ]
 
+#: The eddy/TORTOISE preview selections every case is compiled under.
+SELECTIONS = [
+    selection_for_config('eddy', 'topup'),
+    selection_for_config('tortoise', 'drbuddi'),
+    selection_for_config('eddy', 'topup+drbuddi'),
+]
+
 
 def _case_id(case):
     scenario, kwargs = case
@@ -37,27 +41,23 @@ def _case_id(case):
     return f'{scenario}-{suffix}'
 
 
-@pytest.mark.parametrize('backend', BACKENDS)
+@pytest.mark.parametrize('selection', SELECTIONS, ids=lambda s: s.combination_key())
 @pytest.mark.parametrize('case', CASES, ids=_case_id)
-def test_plan_matches_legacy_routing(tmp_path, case, backend):
+def test_adapter_views_derive_from_the_plan(tmp_path, case, selection):
     scenario, kwargs = case
     grouping = load_scenario(scenario, tmp_path, strict=False, **kwargs)
-    selection = canonical_selection(backend)
     plan = compile_plan(grouping, selection)
 
     # Runs <-> PreprocUnits: same keys in the same order, same files, same
     # (possibly pair-restricted) estimations.
-    units = to_preproc_units(grouping, backend)
+    units = to_preproc_units(grouping, selection)
     assert [run.key for run in plan.runs] == [unit.output_name for unit in units]
     for run, unit in zip(plan.runs, units, strict=True):
         assert run.dwi_files == unit.dwi_files
         assert run.estimation == unit.estimation
 
-    # Issues <-> check_backend: order and text.
-    assert list(plan.issues) == check_backend(grouping, backend)
-
     # Assemblies <-> concatenation_scheme, inverted.
-    scheme = concatenation_scheme(grouping, backend)
+    scheme = concatenation_scheme(grouping, selection)
     from_plan = {
         run_key: assembly.output_name
         for assembly in plan.outputs
@@ -78,9 +78,7 @@ def test_stage_order_per_method_family(tmp_path, case):
     """eddy estimates before HMC (TOPUP integrated); the others correct first."""
     scenario, kwargs = case
     grouping = load_scenario(scenario, tmp_path, strict=False, **kwargs)
-    selections = [canonical_selection(backend) for backend in BACKENDS] + [
-        selection_for_config('shoreline', 'drbuddi')
-    ]
+    selections = [*SELECTIONS, selection_for_config('shoreline', 'drbuddi')]
     for selection in selections:
         plan = compile_plan(grouping, selection)
         for run in plan.runs:
@@ -138,7 +136,7 @@ def test_eddy_mixed_epi_fmap_skips_drbuddi_refinement(tmp_path):
     """A lone reverse b=0 completes the blip pair, but eddy's output is already
     unwarped by the TOPUP field, so scheduling the DRBUDDI refinement would
     correct the distortion a second time."""
-    plan = _plan_for(tmp_path / 'mixed', 'abcd_style', 'eddy', 'topup+drbuddi')
+    plan = _plan_for(tmp_path / 'topup_drbuddi', 'abcd_style', 'eddy', 'topup+drbuddi')
     (run,) = plan.runs
     assert _role_tool(run) == [('estimate', 'topup'), ('hmc-with-field', 'eddy')]
     assert 'drbuddi-refinement-not-useful' in {issue.code for issue in plan.issues}
@@ -301,11 +299,11 @@ def test_run_lookup_helpers(tmp_path):
         plan.run('nope')
 
 
-def test_every_backend_selection_pair_is_reachable():
-    """canonical_selection covers BACKENDS; product with CASES stays in sync."""
-    assert {canonical_selection(b).legacy_backend for b in BACKENDS} == set(BACKENDS)
+def test_case_and_selection_coverage_stays_in_sync():
+    """The parity sweep covers every scenario and flag variant under three selections."""
     assert len(CASES) == len(SCENARIOS) + 4
-    assert len(list(itertools.product(CASES, BACKENDS))) == 3 * len(CASES)
+    assert len(SELECTIONS) == 3
+    assert len({s.combination_key() for s in SELECTIONS}) == 3  # distinct selections
 
 
 def test_plan_step_records_follow_stage_order(tmp_path):

@@ -59,12 +59,14 @@ from .methods import (
     HmcMethod,
     MethodSelection,
     SdcTool,
-    canonical_selection,
     combined_key,
     parse_combined_key,
     selection_for_config,
 )
 from .models import (
+    ANAT_REFERENCE_CHOICES,
+    ANAT_REFERENCES,
+    AnatReference,
     ConcatenationGroup,
     CorrectionMethod,
     DistortionGroup,
@@ -77,10 +79,22 @@ from .models import (
 )
 from .plan import ExecutionPlan, OutputAssembly, PlanStage, ProcessingRun, compile_plan
 from .report import describe_processing, full_report, report_text
-from .validation import BACKENDS, GroupingError, GroupingIssue, check_backend, raise_for_errors
+from .validation import (
+    ISSUE_CODES,
+    GroupingError,
+    GroupingIssue,
+    IssueSpec,
+    describe_issue,
+    raise_for_errors,
+)
 
 __all__ = [
-    'BACKENDS',
+    'ANAT_REFERENCE_CHOICES',
+    'ANAT_REFERENCES',
+    'AnatReference',
+    'ISSUE_CODES',
+    'IssueSpec',
+    'describe_issue',
     'Bids2TableCatalog',
     'HMC_CAPABILITIES',
     'SDC_CAPABILITIES',
@@ -102,8 +116,6 @@ __all__ = [
     'SdcTool',
     'assembly_to_sidecar',
     'build_dwi_grouping',
-    'canonical_selection',
-    'check_backend',
     'combined_key',
     'compile_plan',
     'ExecutionPlan',

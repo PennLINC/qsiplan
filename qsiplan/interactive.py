@@ -32,9 +32,10 @@ import html
 from .bids import find_bval, find_bvec
 from .metadata import B0_THRESHOLD, read_bvals_bvecs
 from .methods import reachable_selections
-from .models import CorrectionMethod, DWIGrouping, GroupingPolicy, Provenance
+from .models import ANAT_REFERENCES, CorrectionMethod, DWIGrouping, GroupingPolicy, Provenance
 from .plan import compile_plan
 from .report import processing_steps, shell_label
+from .validation import describe_issue
 from .viz.pipeline import _embedded_json, pipeline_assets, pipeline_div, plan_payload
 from .viz.qspace import q_points, scheme_div, scheme_payload, viewer_assets
 
@@ -904,8 +905,10 @@ def _issue_notes(grouping: DWIGrouping) -> list[str]:
     parts = ['<section><h2>Things you may want to know</h2>']
     for issue in grouping.issues:
         icon = '&#10060;' if issue.severity == 'error' else '&#9888;&#65039;'
+        # The registered one-line meaning of the code, on hover.
+        meaning = _esc(describe_issue(issue.code))
         parts.append(
-            f'<div class="note {_esc(issue.severity)}">{icon} '
+            f'<div class="note {_esc(issue.severity)}" title="{meaning}">{icon} '
             f'<b>{_esc(issue.code)}</b>: {_esc(issue.message)}</div>'
         )
     parts.append('</section>')
@@ -996,9 +999,7 @@ def _policy_controls(policy: GroupingPolicy) -> str:
         + '<label>--sdc-anat-reference <select class="ctl-policy">'
         + option('', 'none', not sdc_anat_reference)
         + anat_option('auto')
-        + anat_option('synb0')
-        + anat_option('t2w')
-        + anat_option('invt1w')
+        + ''.join(anat_option(name) for name in ANAT_REFERENCES)
         + '</select></label>'
         + '<label>--distortion-group-merge <select class="ctl-policy">'
         + option('', 'concat', merge == 'concat')

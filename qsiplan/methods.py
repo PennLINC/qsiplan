@@ -2,9 +2,9 @@
 
 Head-motion correction (HMC) and susceptibility distortion correction (SDC)
 are independent choices: which software corrects motion, and which tool
-implements each unit's correction method. The legacy ``'fsl'``/``'tortoise'``/
-``'mixed'`` backend strings conflate the two - most visibly for SHORELine,
-which shares TORTOISE's DRBUDDI feasibility without ever running DIFFPREP.
+implements each unit's correction method. No single "backend" name can carry
+both - SHORELine shares TORTOISE's DRBUDDI feasibility without ever running
+DIFFPREP - so nothing here collapses them into one.
 
 :class:`MethodSelection` names the axes separately, and the capability
 registries record the per-tool facts that feasibility checks and the plan
@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 
-from .models import CorrectionMethod, GroupingPolicy
+from .models import ANAT_REFERENCE_CHOICES, CorrectionMethod, GroupingPolicy
 
 
 class HmcMethod(enum.StrEnum):
@@ -188,8 +188,6 @@ _HMC_ALIASES = {
     'none': HmcMethod.SHORELINE,
 }
 
-_LEGACY_HMC_MODEL = {'3dshore': '3dSHORE', 'tensor': 'tensor', 'none': 'none'}
-
 
 @dataclasses.dataclass(frozen=True)
 class MethodSelection:
@@ -223,27 +221,6 @@ class MethodSelection:
         for tool in self.pepolar_tools:
             if CorrectionMethod.PEPOLAR not in SDC_CAPABILITIES[tool].consumes:
                 raise ValueError(f'{tool.value!r} is not a PEPOLAR tool')
-
-    @property
-    def legacy_backend(self) -> str:
-        """The :data:`~.validation.BACKENDS` name this selection previews as."""
-        if self.hmc is HmcMethod.EDDY:
-            return 'mixed' if SdcTool.DRBUDDI in self.pepolar_tools else 'fsl'
-        return 'tortoise'
-
-    @property
-    def legacy_hmc_model(self) -> str:
-        """The legacy ``--hmc-model`` value equivalent to this selection."""
-        if self.hmc is HmcMethod.EDDY:
-            return 'eddy'
-        if self.hmc is HmcMethod.TORTOISE:
-            return 'tortoise'
-        return _LEGACY_HMC_MODEL[self.shoreline_model]
-
-    @property
-    def legacy_pepolar_method(self) -> str:
-        """The legacy ``--pepolar-method`` value equivalent to this selection."""
-        return '+'.join(SDC_CAPABILITIES[tool].label for tool in self.pepolar_tools)
 
     def label(self) -> str:
         """Display name, e.g. ``'eddy + TOPUP→DRBUDDI'``."""
@@ -321,8 +298,7 @@ def parse_combined_key(key: str):
             else:
                 if name == 'distortion-group-merge' and value not in ('concat', 'average', 'none'):
                     raise ValueError(f'Unknown {name} value: {value!r}')
-                anat_values = ('none', 'auto', 'synb0', 't2w', 'invt1w')
-                if name == 'sdc-anat-reference' and value not in anat_values:
+                if name == 'sdc-anat-reference' and value not in ANAT_REFERENCE_CHOICES:
                     raise ValueError(f'Unknown {name} value: {value!r}')
                 policy_kwargs[field.name] = value
         else:
@@ -397,18 +373,3 @@ def reachable_selections() -> list[MethodSelection]:
         )
     selections.append(selection_for_config('tortoise', 'drbuddi'))
     return selections
-
-
-#: The MethodSelection each legacy backend name previews as.
-_CANONICAL = {
-    'fsl': ('eddy', 'TOPUP'),
-    'mixed': ('eddy', 'TOPUP+DRBUDDI'),
-    'tortoise': ('tortoise', 'DRBUDDI'),
-}
-
-
-def canonical_selection(backend: str) -> MethodSelection:
-    """The representative :class:`MethodSelection` for a legacy backend name."""
-    if backend not in _CANONICAL:
-        raise ValueError(f'Unknown backend: {backend!r}')
-    return selection_for_config(*_CANONICAL[backend])

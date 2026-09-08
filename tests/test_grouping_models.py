@@ -73,6 +73,20 @@ class TestDeriveOutputName:
     def test_extensions(self, extension):
         assert derive_output_name([f'/d/sub-1/dwi/sub-1_dir-AP_dwi{extension}']) == 'sub-1_dir-AP'
 
+    def test_single_non_dwi_file_keeps_its_suffix(self):
+        # Estimation ids are derived from fieldmap paths too: only the ``dwi``
+        # suffix is dropped, so an epi fieldmap keeps naming itself.
+        assert derive_output_name(['/d/sub-1/fmap/sub-1_dir-PA_epi.nii.gz']) == 'sub-1_dir-PA_epi'
+
+    def test_entities_come_from_the_one_bids_parser(self):
+        # derive_output_name and inference._entity_stem both split names with
+        # bids._parse_bids_name; a '+' in a label (legal BIDS) survives intact.
+        from qsiplan.inference import _entity_stem
+
+        assert _entity_stem('/d/sub-1/fmap/sub-1_acq-x+y_phasediff.nii.gz') == 'sub-1_acq-x+y'
+        assert _entity_stem('/d/sub-1/fmap/sub-1_acq-x+y_magnitude1.nii.gz') == 'sub-1_acq-x+y'
+        assert derive_output_name(['/d/sub-1/dwi/sub-1_acq-x+y_dwi.nii.gz']) == 'sub-1_acq-x+y'
+
 
 class TestReadBvalsBvecs:
     """The FSL gradient reader (a replacement for dipy's ``read_bvals_bvecs``)."""

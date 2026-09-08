@@ -24,8 +24,11 @@ from __future__ import annotations
 from collections import defaultdict
 from itertools import combinations
 
-from .bids import is_bids_label
+from .bids import _parse_bids_name, is_bids_label
 from .models import (
+    ANAT_REFERENCE_CHOICES,
+    ANAT_REFERENCES,
+    AUTO_ANAT_REFERENCES,
     AUTO_PREFIX,
     ConcatenationGroup,
     CorrectionMethod,
@@ -59,14 +62,16 @@ _PROVENANCE_RANK = {
 
 
 def _entity_stem(path: str) -> str:
-    """Filename without extension and without the trailing suffix token.
+    """The entity portion of a filename - no extension, no suffix.
 
     ``sub-01_acq-x_phasediff.nii.gz`` and ``sub-01_acq-x_magnitude1.nii.gz``
     share the stem ``sub-01_acq-x``, which is how sidecar-companion files
-    (phasediff + magnitudes, phase1 + phase2) are recognized.
+    (phasediff + magnitudes, phase1 + phase2) are recognized. The split is the
+    package's one BIDS-name parser (:func:`~.bids._parse_bids_name`), so a
+    name with no entities at all falls back to its bare basename.
     """
-    fname = strip_nii_ext(path)
-    return fname.rsplit('_', 1)[0] if '_' in fname else fname
+    entities, _suffix, _extension = _parse_bids_name(path)
+    return '_'.join(f'{key}-{value}' for key, value in entities.items()) or strip_nii_ext(path)
 
 
 def _classify_method(records: list[FileRecord]) -> CorrectionMethod | None:
@@ -388,8 +393,8 @@ def resolve_estimations(
             # susceptibility field - opposite polarity on one axis is the
             # well-conditioned special case, not a requirement - so ALL
             # differing-PE series in the bucket estimate one field together.
-            # Whether a backend can consume the resulting shape (multiple
-            # axes, unpaired polarities) is check_backend's business.
+            # Whether a method can consume the resulting shape (multiple
+            # axes, unpaired polarities) is the plan compiler's business.
             axes = ''.join(sorted({record.signature.pe_axis for record in encoded}))
             id_parts = [AUTO_PREFIX + 'pepolar']
             if session:
@@ -623,51 +628,11 @@ def _anat_for_session(records, session, suffix, *, cross_session=True):
     return []
 
 
-#: The anatomical SDC sources ``sdc_anat_reference`` can select, with the estimation
-#: parameters each uses: (CorrectionMethod, estimation id stem, anat suffix).
-#: ``sdc_anat_reference`` names the anatomical-derived SOURCE image (a synthetic b=0,
-#: the real T2w, or the inverted-contrast T1w); which engine consumes it is
-#: the method axis's business.
-_ANAT_SDC_METHODS = {
-    'synb0': (CorrectionMethod.SYNB0, 'synb0', 'T1w'),
-    't2w': (CorrectionMethod.T2WREG, 't2wreg', 'T2w'),
-    'invt1w': (CorrectionMethod.NIPREPS_SYN, 'syn', 'T1w'),
-}
-
-#: Per-method error for target series without a PhaseEncodingDirection.
-#: T2Wreg is a registration, not a correction along an encoding axis, so
-#: ``'t2w'`` deliberately has no entry and corrects such series anyway.
-_ANAT_SDC_PEDIR_ERRORS = {
-    'synb0': (
-        'synb0-missing-pedir',
-        'SyNb0 was requested, but these DWI series have no '
-        'PhaseEncodingDirection, which the synthetic-b=0 correction '
-        'requires.',
-    ),
-    'invt1w': (
-        'syn-missing-pedir',
-        'SyN-SDC was requested, but these DWI series have no '
-        'PhaseEncodingDirection, which the fieldmap-less SyN correction '
-        'requires.',
-    ),
-}
-
-#: Per-method error when the subject lacks the anatomical image it needs.
-_ANAT_SDC_MISSING_ANAT_ERRORS = {
-    'synb0': (
-        'synb0-requires-t1w',
-        'SyNb0 was requested, but this subject has no T1w image to '
-        'synthesize an undistorted b=0 from.',
-    ),
-    't2w': (
-        't2wreg-requires-t2w',
-        'T2w-registration SDC (T2Wreg) was requested, but this subject has no T2w image.',
-    ),
-    'invt1w': (
-        'syn-requires-t1w',
-        'SyN-SDC was requested, but this subject has no T1w image to register against a template.',
-    ),
-}
+#: ``sdc_anat_reference`` names the anatomical-derived SOURCE image (a synthetic
+#: b=0, the real T2w, or the inverted-contrast T1w); which engine consumes it
+#: is the method axis's business. Every per-reference fact - method, id stem,
+#: source suffix, and the missing-anatomy / missing-PE-direction errors - comes
+#: from :data:`~.models.ANAT_REFERENCES`, the one table for the whole package.
 
 
 def resolve_fieldmapless(
@@ -713,11 +678,12 @@ def resolve_fieldmapless(
     dwi_records = {record.path: record for record in records if record.is_dwi}
 
     if force_sdc_anat_reference and sdc_anat_reference == 'none':
+        names = ', '.join(ANAT_REFERENCES)
         issues.append(
             error(
                 'force-sdc-anat-reference-needs-method',
                 '--force sdc-anat-reference requires an anatomical SDC method to force: '
-                'pass --sdc-anat-reference synb0, t2w, invt1w, or auto.',
+                f'pass --sdc-anat-reference {names}, or auto.',
             )
         )
         return issues
@@ -740,14 +706,16 @@ def resolve_fieldmapless(
         if sdc_anat_reference != 'auto':
             return sdc_anat_reference
         for cross in (False, True):
-            if _anat_for_session(records, session, 'T1w', cross_session=cross):
-                return 'synb0'
-            if _anat_for_session(records, session, 'T2w', cross_session=cross):
-                return 't2w'
+            for reference in AUTO_ANAT_REFERENCES:
+                if _anat_for_session(
+                    records, session, reference.source_suffix, cross_session=cross
+                ):
+                    return reference.name
         return 'none'
 
     def _apply(paths, session, method_name):
-        method, id_stem, suffix = _ANAT_SDC_METHODS[method_name]
+        reference = ANAT_REFERENCES[method_name]
+        method, id_stem, suffix = reference.method, reference.id_stem, reference.source_suffix
         anat = _anat_for_session(records, session, suffix)
         if not anat:
             return False
@@ -797,15 +765,15 @@ def resolve_fieldmapless(
             # Only reachable through 'auto' when this session has no anatomy.
             auto_unresolved.extend(targets)
             continue
-        pedir_error = _ANAT_SDC_PEDIR_ERRORS.get(method_name)
-        if pedir_error is not None:
+        reference = ANAT_REFERENCES[method_name]
+        if reference.pedir_issue is not None:
             missing_pedir = [p for p in targets if dwi_records[p].signature.pe_dir is None]
             if missing_pedir:
-                code, message = pedir_error
+                code, message = reference.pedir_issue
                 issues.append(error(code, message, tuple(missing_pedir)))
                 targets = [p for p in targets if p not in missing_pedir]
         if targets and not _apply(targets, session, method_name):
-            code, message = _ANAT_SDC_MISSING_ANAT_ERRORS[method_name]
+            code, message = reference.missing_anat_issue
             issues.append(error(code, message, tuple(targets)))
 
     if auto_unresolved:
@@ -1159,10 +1127,10 @@ def build_grouping(
             f'not {distortion_group_merge!r}.'
         )
     sdc_anat_reference = sdc_anat_reference or 'none'
-    if sdc_anat_reference not in ('none', 'auto', 'synb0', 't2w', 'invt1w'):
+    if sdc_anat_reference not in ANAT_REFERENCE_CHOICES:
+        choices = ', '.join(repr(choice) for choice in ANAT_REFERENCE_CHOICES)
         raise ValueError(
-            "sdc_anat_reference must be 'none', 'auto', 'synb0', 't2w', or "
-            f"'invt1w', not {sdc_anat_reference!r}."
+            f'sdc_anat_reference must be one of {choices}, not {sdc_anat_reference!r}.'
         )
     policy = GroupingPolicy(
         separate_all_dwis=separate_all_dwis,

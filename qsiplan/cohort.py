@@ -23,16 +23,18 @@ import json
 
 from .interactive import cohort_page_html
 from .metadata import index_subject
-from .methods import canonical_selection, selection_for_config
+from .methods import selection_for_config
 from .plan import compile_plan
 
 #: The head-motion methods the cohort selector offers, each with its default
-#: SDC chain. Keyed by the value the page's selector and signatures use.
-COHORT_METHODS = [
-    ('eddy', 'eddy + TOPUP→DRBUDDI', canonical_selection('mixed')),
-    ('shoreline', 'SHORELine + DRBUDDI', selection_for_config('shoreline', 'drbuddi')),
-    ('tortoise', 'TORTOISE + DRBUDDI', canonical_selection('tortoise')),
+#: SDC chain, keyed by the value the page's selector and signatures use. The
+#: display label is the selection's own, never spelled by hand here.
+_COHORT_SELECTIONS = [
+    ('eddy', selection_for_config('eddy', 'topup+drbuddi')),
+    ('shoreline', selection_for_config('shoreline', 'drbuddi')),
+    ('tortoise', selection_for_config('tortoise', 'drbuddi')),
 ]
+COHORT_METHODS = [(key, selection.label(), selection) for key, selection in _COHORT_SELECTIONS]
 
 
 def _run_session(grouping, run) -> str | None:

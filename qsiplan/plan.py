@@ -25,9 +25,15 @@ import dataclasses
 import enum
 import os.path as op
 
-from .adapters import PreprocUnit, _decompose_unit, _decomposes_on_tortoise
+from .adapters import PreprocUnit, _decompose_unit, _decomposes_pepolar_pairs
 from .methods import HMC_CAPABILITIES, HmcMethod, MethodSelection, SdcTool
-from .models import CorrectionMethod, DWIGrouping, FieldmapEstimation, Provenance
+from .models import (
+    ANAT_REFERENCES,
+    CorrectionMethod,
+    DWIGrouping,
+    FieldmapEstimation,
+    Provenance,
+)
 from .validation import (
     GroupingIssue,
     _pepolar_signature_count,
@@ -209,7 +215,9 @@ def _pepolar_stages(
     grouping: DWIGrouping, selection: MethodSelection, unit: PreprocUnit
 ) -> list[PlanStage]:
     """The stage sequence for a PEPOLAR-corrected unit under ``selection``."""
-    t2w = 't2w' if grouping.anat_files('T2w') else None
+    t2w_reference = ANAT_REFERENCES['t2w']
+    has_t2w = bool(grouping.anat_files(t2w_reference.source_suffix))
+    t2w = t2w_reference.structural_target if has_t2w else None
     estimation = unit.estimation
     common = {
         'method': CorrectionMethod.PEPOLAR,
@@ -292,7 +300,9 @@ def _stages_for_unit(
                 method=unit.method,
                 estimation=estimation.b0field_id,
                 fieldmap_sources=tuple(estimation.sources),
-                structural_target='t1w' if unit.is_nipreps_syn else None,
+                structural_target=(
+                    ANAT_REFERENCES['invt1w'].structural_target if unit.is_nipreps_syn else None
+                ),
             ),
         )
 
@@ -313,7 +323,7 @@ def _stages_for_unit(
                 method=CorrectionMethod.SYNB0,
                 estimation=estimation.b0field_id,
                 fieldmap_sources=tuple(estimation.sources),
-                structural_target='synb0',
+                structural_target=ANAT_REFERENCES['synb0'].structural_target,
             ),
             PlanStage(
                 index=1, role=StageRole.HMC_WITH_FIELD, tool=HmcMethod.EDDY.value, consumes=0
@@ -345,11 +355,9 @@ def _stages_for_unit(
 def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[GroupingIssue]:
     """The feasibility issues for ``selection``, one output at a time.
 
-    The rules and their message text mirror the legacy ``check_backend``
-    verbatim (golden reports freeze the prose); the branch conditions are
-    expressed in selection terms. The legacy backend equivalences are exact:
-    ``fsl``/``mixed`` is eddy (without/with DRBUDDI), ``tortoise`` is
-    everything else.
+    The message text is frozen by the golden reports; the branch conditions
+    are expressed in selection terms - eddy with or without a DRBUDDI
+    refinement, TORTOISE, SHORELine.
     """
     is_eddy = selection.hmc is HmcMethod.EDDY
     with_topup = is_eddy and SdcTool.TOPUP in selection.pepolar_tools
@@ -579,20 +587,15 @@ def _check_shelling(grouping, selection, multipart_id, concat) -> list[GroupingI
 def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> ExecutionPlan:
     """Compile the execution plan for ``selection`` over a finished grouping.
 
-    Pure: everything comes from the grouping and the selection. Run keys and
-    the run/assembly structure match the legacy adapters byte-for-byte
-    (``to_preproc_units``/``concatenation_scheme``), and ``issues`` match
-    ``check_backend`` - both pinned by the parity suite.
+    Pure: everything comes from the grouping and the selection. The adapter
+    views (``to_preproc_units``/``concatenation_scheme``) are derived from
+    this plan's runs and assemblies; the parity suite pins that derivation.
     """
     concat_of_unit = {
         unit_key: concat
         for concat in grouping.concatenation_groups.values()
         for unit_key in concat.correction_units
     }
-    decompose_backend = (
-        'tortoise' if HMC_CAPABILITIES[selection.hmc].decomposes_pepolar_pairs else 'fsl'
-    )
-
     runs: list[ProcessingRun] = []
     for unit_key in sorted(grouping.correction_units):
         unit = grouping.correction_units[unit_key]
@@ -600,7 +603,7 @@ def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> Execution
         concat = concat_of_unit.get(unit.key)
         output_group = concat.key if concat is not None else unit.key
 
-        if _decomposes_on_tortoise(grouping, unit, estimation, decompose_backend):
+        if _decomposes_pepolar_pairs(grouping, unit, estimation, selection):
             subunits = _decompose_unit(grouping, unit, estimation)
         else:
             subunits = [
