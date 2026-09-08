@@ -20,9 +20,11 @@ from qsiplan.cli_spec import (
     Kind,
     add_plan_arguments,
     policy_from_namespace,
+    scope_from_namespace,
     selection_from_namespace,
 )
 from qsiplan.models import GroupingPolicy
+from qsiplan.scope import ANAT_MODELS, SessionScope
 
 
 def _parser():
@@ -156,6 +158,50 @@ def test_cli_phrase_round_trips_through_the_parser(policy):
     # loop between the display (cli_phrase) and the input (the spec parser).
     namespace = _parser().parse_args(policy.cli_phrase().split())
     assert policy_from_namespace(namespace) == policy
+
+
+def _scope_parser():
+    # A consumer's parser owns --session-label; the spec adds the model flag.
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--session-label', nargs='+')
+    add_plan_arguments(parser)
+    return parser
+
+
+def test_scope_options_name_a_real_session_scope_field():
+    fields = {field.name for field in dataclasses.fields(SessionScope)}
+    for option in PLAN_OPTIONS:
+        if option.axis is Axis.SCOPE:
+            assert option.scope_field in fields, option.flag
+
+
+def test_default_namespace_is_the_default_scope():
+    assert scope_from_namespace(_scope_parser().parse_args([])) == SessionScope()
+
+
+def test_subject_anatomical_reference_reads_into_the_scope():
+    parser = _scope_parser()
+    assert scope_from_namespace(parser.parse_args([])).model == 'first-lex'
+    for model in ANAT_MODELS:
+        namespace = parser.parse_args(['--subject-anatomical-reference', model])
+        assert scope_from_namespace(namespace).model == model
+    with pytest.raises(SystemExit):
+        parser.parse_args(['--subject-anatomical-reference', 'bogus'])
+
+
+def test_session_label_is_read_as_a_filter():
+    parser = _scope_parser()
+    scope = scope_from_namespace(parser.parse_args(['--session-label', '01', '02']))
+    assert scope.session_filter == ('01', '02')
+    assert scope_from_namespace(parser.parse_args([])).session_filter is None
+
+
+def test_scope_flags_do_not_leak_into_the_policy():
+    # The scope axis feeds SessionScope, never GroupingPolicy: a sessionwise
+    # run under the default policy is still the default policy.
+    namespace = _scope_parser().parse_args(['--subject-anatomical-reference', 'sessionwise'])
+    assert policy_from_namespace(namespace) == GroupingPolicy()
+    assert scope_from_namespace(namespace).sessionwise
 
 
 def test_owned_choices_are_the_conformance_contract():

@@ -495,9 +495,12 @@ def _legend_line() -> str:
     return f'<p class="legend">Colors show where each decision came from:&nbsp; {legend}</p>'
 
 
-def _title(subject_id: str, past: bool = False) -> str:
+def _title(subject_id: str, past: bool = False, session: str | None = None) -> str:
     processed = 'processed' if past else 'will process'
-    return f'<h1>How QSIPrep {processed} sub-{_esc(subject_id)}&rsquo;s diffusion data</h1>'
+    who = f'sub-{_esc(subject_id)}'
+    if session is not None:
+        who += f' ses-{_esc(session)}'
+    return f'<h1>How QSIPrep {processed} {who}&rsquo;s diffusion data</h1>'
 
 
 def _header(grouping: DWIGrouping, past: bool = False) -> list[str]:
@@ -1026,6 +1029,7 @@ def render_explorer_html(
     records,
     subject_id: str,
     *,
+    session: str | None = None,
     index_issues=(),
     selections=None,
     initial_policy: GroupingPolicy | None = None,
@@ -1098,7 +1102,7 @@ def render_explorer_html(
 
     body = ''.join(
         [
-            f'<header>{_title(subject_id)}{_legend_line()}</header>',
+            f'<header>{_title(subject_id, session=session)}{_legend_line()}</header>',
             '<section><h2>Grouping options &mdash; how the scans are grouped</h2>',
             _policy_controls(initial_policy),
             '<p class="plan-cli policy-cli"></p></section>',
@@ -1126,11 +1130,12 @@ def render_explorer_html(
         f'<script>{plan_js}</script>'
         f'<script>{_JS}</script>'
     )
+    page_id = f'sub-{_esc(subject_id)}' + (f'_ses-{_esc(session)}' if session else '')
     return (
         '<!doctype html>\n'
         '<html lang="en"><head><meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-        f'<title>DWI grouping explorer for sub-{_esc(subject_id)}</title>\n'
+        f'<title>DWI grouping explorer for {page_id}</title>\n'
         '<style>body{margin:0}</style></head>\n'
         f'<body>{fragment}</body></html>'
     )

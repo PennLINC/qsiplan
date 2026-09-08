@@ -32,6 +32,7 @@ import enum
 
 from .methods import MethodSelection, selection_for_config
 from .models import GroupingPolicy
+from .scope import ANAT_MODELS, DEFAULT_ANAT_MODEL, SessionScope
 
 
 class Axis(enum.StrEnum):
@@ -39,6 +40,7 @@ class Axis(enum.StrEnum):
 
     POLICY = 'policy'  # -> GroupingPolicy (regroups the data)
     METHOD = 'method'  # -> MethodSelection (picks the software), via selection_for_config
+    SCOPE = 'scope'  # -> SessionScope (which sessions, and how they map to units)
 
 
 class Kind(enum.StrEnum):
@@ -62,7 +64,8 @@ class PlanOption:
     :class:`GroupingPolicy` field it toggles; ``policy_field`` names the field
     for the single-valued kinds; ``selection_arg`` names the
     :func:`~.methods.selection_for_config` argument a :attr:`Axis.METHOD`
-    option feeds.
+    option feeds; ``scope_field`` names the :class:`~.scope.SessionScope` field
+    an :attr:`Axis.SCOPE` option feeds.
     """
 
     flag: str
@@ -72,6 +75,7 @@ class PlanOption:
     policy_field: str | None = None  # FLAG / CHOICE target
     members: tuple[tuple[str, str], ...] = ()  # LIST: (choice value, policy field)
     selection_arg: str | None = None  # METHOD: 'hmc' | 'sdc' | 'shoreline_model'
+    scope_field: str | None = None  # SCOPE: SessionScope field ('model')
     choices: tuple[str, ...] = ()  # CHOICE
     default: object = None
     extendable: bool = False  # a consumer may add choices (split-owned lists)
@@ -216,6 +220,18 @@ PLAN_OPTIONS: tuple[PlanOption, ...] = (
         choices=('concat', 'average', 'none'),
         default='concat',
     ),
+    PlanOption(
+        '--subject-anatomical-reference',
+        Axis.SCOPE,
+        Kind.CHOICE,
+        'how in-scope sessions map to processing and the anatomical reference '
+        "(copied from fMRIPrep): 'first-lex' (default) and 'unbiased' process "
+        'the subject as a whole, so anatomical discovery reaches across '
+        "sessions; 'sessionwise' isolates each session into its own plan",
+        scope_field='model',
+        choices=ANAT_MODELS,
+        default=DEFAULT_ANAT_MODEL,
+    ),
 )
 
 
@@ -238,6 +254,25 @@ def policy_from_namespace(namespace) -> GroupingPolicy:
         if option.axis is Axis.POLICY:
             kwargs.update(option.policy_kwargs(namespace))
     return GroupingPolicy(**kwargs)
+
+
+def scope_from_namespace(namespace) -> SessionScope:
+    """The :class:`~.scope.SessionScope` the parsed scope flags select.
+
+    The ``--subject-anatomical-reference`` model comes from this shared spec;
+    the ``--session-label`` filter is a standard BIDS-App flag each consumer
+    owns in its own parser, read here opportunistically (absent -> no filter),
+    exactly as :meth:`PlanOption.policy_kwargs` tolerates a missing attribute.
+    """
+    kwargs: dict = {}
+    for option in PLAN_OPTIONS:
+        if option.axis is Axis.SCOPE and option.scope_field:
+            kwargs[option.scope_field] = getattr(namespace, option.dest, option.default)
+    session_label = getattr(namespace, 'session_label', None)
+    return SessionScope(
+        session_filter=tuple(session_label) if session_label else None,
+        **kwargs,
+    )
 
 
 def selection_from_namespace(namespace) -> MethodSelection | None:

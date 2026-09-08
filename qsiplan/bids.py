@@ -37,7 +37,22 @@ Fetch some test data
 
 import itertools
 import os
+import re
 from pathlib import Path
+
+#: The characters a BIDS entity *label* may contain. The BIDS spec defines a
+#: label as "an alphanumeric (and possibly including ``+`` character(s)) value",
+#: so ``+`` is legal today (e.g. template/cohort labels like ``MNIInfant+1``).
+#: Keep this the single definition of the grammar: widening it later (BIDS may
+#: admit more characters over time) is then a one-line change, not a hunt
+#: through ad-hoc regexes. It deliberately does *not* validate the surrounding
+#: ``key-`` structure - :func:`_parse_bids_name` handles that, grammar-agnostically.
+BIDS_LABEL = r'[0-9A-Za-z+]+'
+
+
+def is_bids_label(value: str) -> bool:
+    """Whether ``value`` is a valid BIDS entity label (alphanumeric plus ``+``)."""
+    return re.fullmatch(BIDS_LABEL, value) is not None
 
 
 def _norm(path):
