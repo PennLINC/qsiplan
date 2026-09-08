@@ -83,6 +83,10 @@ GOLDEN_CASES = [
     ('partial_pair', {}, 'partial_pair'),
     ('shell_mix', {}, 'shell_mix'),
     ('nonshelled_pair', {}, 'nonshelled_pair'),
+    # Complex-valued (part-mag/part-phase) acquisitions: phase is a companion,
+    # named under its magnitude and never listed as a series or a source.
+    ('complex_pepolar', {}, 'complex_pepolar'),
+    ('complex_realimag', {}, 'complex_realimag'),
 ]
 
 #: Flag variants with no golden file: invariant coverage only.

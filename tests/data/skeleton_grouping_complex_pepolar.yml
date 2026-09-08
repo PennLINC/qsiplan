@@ -1,0 +1,43 @@
+# Complex-valued (part-mag/part-phase) AP DWI series corrected by a
+# complex-valued reverse phase-encoded EPI fieldmap linked with IntendedFor
+# that names both parts, as curators often do. Expected: each phase image is
+# the companion of its magnitude, never a series or a source - one TRANSLATED
+# PEPOLAR estimation whose sources are the magnitude epi and the magnitude
+# DWI, and one output ("sub-01_dir-AP", no part- token) of one series.
+'01':
+  - anat:
+      - suffix: T1w
+    fmap:
+      - dir: PA
+        part: mag
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          IntendedFor:
+            - 'dwi/sub-01_dir-AP_part-mag_dwi.nii.gz'
+            - 'dwi/sub-01_dir-AP_part-phase_dwi.nii.gz'
+      - dir: PA
+        part: phase
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          Units: arbitrary
+          IntendedFor:
+            - 'dwi/sub-01_dir-AP_part-mag_dwi.nii.gz'
+            - 'dwi/sub-01_dir-AP_part-phase_dwi.nii.gz'
+    dwi:
+      - dir: AP
+        part: mag
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: AP
+        part: phase
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          Units: arbitrary

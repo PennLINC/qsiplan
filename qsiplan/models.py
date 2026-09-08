@@ -323,6 +323,12 @@ class FileRecord:
     # Resolved once during indexing; the explorer must not rescan the dataset.
     bval_file: str | None = None
     bvec_file: str | None = None
+    # Complex-valued acquisitions (BIDS ``part-``): a record is always the
+    # magnitude (``'mag'``) or a plain image (None). Its phase companion, when
+    # one exists, rides here and is never indexed as a record of its own, so
+    # every grouping tier is magnitude-only by construction.
+    part: str | None = None
+    phase_path: str | None = None
 
     def __post_init__(self):
         # Freeze the raw sidecar so nothing downstream can mutate shared state.
@@ -429,8 +435,8 @@ class ConcatenationGroup:
 
 
 #: Version of the ``DWIGrouping.to_dict`` JSON layout; bump on incompatible
-#: shape changes.
-SCHEMA_VERSION = 1
+#: shape changes. 2: per-file ``part``/``phase_path`` (complex-valued DWI).
+SCHEMA_VERSION = 2
 
 
 @dataclasses.dataclass(frozen=True)
@@ -617,6 +623,8 @@ class DWIGrouping:
                     'datatype': rec.datatype,
                     'suffix': rec.suffix,
                     'session': rec.session,
+                    'part': rec.part,
+                    'phase_path': rec.phase_path,
                     'pe_dir': rec.signature.pe_dir,
                     'readout_time': rec.signature.readout_time,
                     'shim': list(rec.signature.shim) if rec.signature.shim else None,
@@ -729,6 +737,8 @@ def derive_output_name(paths, acq: str | None = None) -> str:
     'sub-1_dir-AP'
     >>> derive_output_name(['/data/sub-1/dwi/sub-1_dir-AP_dwi.nii.gz'], acq='partA')
     'sub-1_acq-partA_dir-AP'
+    >>> derive_output_name(['/data/sub-1/dwi/sub-1_dir-AP_part-mag_dwi.nii.gz'])
+    'sub-1_dir-AP'
     """
     paths = sorted(paths)
     if len(paths) == 1:
@@ -737,7 +747,10 @@ def derive_output_name(paths, acq: str | None = None) -> str:
         # suffix (an ``epi`` fieldmap naming an estimation) stays part of the
         # name, exactly as before.
         entities, suffix, _extension = _parse_bids_name(paths[0])
-        tokens = [f'{key}-{value}' for key, value in entities.items()]
+        # ``part-mag`` never names an output: the derivative is the magnitude
+        # (complex-combined or plain), exactly as the multi-file whitelist below
+        # already implies.
+        tokens = [f'{key}-{value}' for key, value in entities.items() if key != 'part']
         if suffix and suffix != 'dwi':
             tokens.append(suffix)
         fname = '_'.join(tokens)

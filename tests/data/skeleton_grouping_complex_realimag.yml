@@ -1,0 +1,46 @@
+# Complex-valued AP/PA DWI series that also ship part-real and part-imag
+# images. Expected: QSIPrep consumes the magnitude (with its phase companion)
+# only - the real and imaginary parts are ignored with one warning each - and
+# the grouping is otherwise the ordinary two-series PEPOLAR pair.
+'01':
+  - anat:
+      - suffix: T1w
+    dwi:
+      - dir: AP
+        part: mag
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: AP
+        part: phase
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          Units: arbitrary
+      - dir: AP
+        part: real
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: AP
+        part: imag
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: PA
+        part: mag
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+      - dir: PA
+        part: phase
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          Units: arbitrary

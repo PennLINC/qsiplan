@@ -46,7 +46,9 @@ from .validation import (
     warning,
 )
 
-PLAN_SCHEMA_VERSION = 1
+#: Version of the ``ExecutionPlan.to_dict`` JSON layout; bump on incompatible
+#: shape changes. 2: per-run ``dwi_phase_files`` (complex-valued DWI).
+PLAN_SCHEMA_VERSION = 2
 
 
 class StageRole(enum.StrEnum):
@@ -120,6 +122,10 @@ class ProcessingRun:
     estimation: FieldmapEstimation | None
     stages: tuple[PlanStage, ...]
     output_group: str
+    #: Phase companion of each complex-valued series, keyed by the magnitude
+    #: path in ``dwi_files`` (see :attr:`~.adapters.PreprocUnit.dwi_phase_files`),
+    #: so a persisted plan says which images are combined without a re-glob.
+    dwi_phase_files: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def stage_with(self, tool) -> PlanStage | None:
         """The first stage run by ``tool`` (an :class:`~.methods.SdcTool`,
@@ -146,6 +152,7 @@ class ProcessingRun:
             'estimation': self.estimation.b0field_id if self.estimation else None,
             'stages': [stage.to_dict() for stage in self.stages],
             'output_group': self.output_group,
+            'dwi_phase_files': dict(sorted(self.dwi_phase_files.items())),
         }
 
 
@@ -623,6 +630,7 @@ def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> Execution
                     estimation=subunit.estimation,
                     stages=_stages_for_unit(grouping, selection, subunit),
                     output_group=output_group,
+                    dwi_phase_files=subunit.dwi_phase_files,
                 )
             )
 

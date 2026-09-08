@@ -20,6 +20,19 @@ def check_model_integrity(grouping: DWIGrouping) -> list[str]:
     files = grouping.files
     dwi_paths = {path for path, rec in files.items() if rec.is_dwi}
 
+    # --- complex-valued companions ----------------------------------------
+    # Only magnitudes are ever indexed; a phase image is a companion of one
+    # EPI-like record and is never a record (hence never a member) itself.
+    for path, rec in files.items():
+        if rec.part not in (None, 'mag'):
+            violations.append(f"{path} is indexed with part '{rec.part}'")
+        if rec.phase_path is None:
+            continue
+        if not rec.is_epi_like:
+            violations.append(f'{path} carries a phase companion but is not an EPI image')
+        if rec.phase_path in files:
+            violations.append(f'phase companion {rec.phase_path} of {path} is itself indexed')
+
     # --- referential integrity -------------------------------------------
     for b0field_id, est in grouping.estimations.items():
         if est.b0field_id != b0field_id:
