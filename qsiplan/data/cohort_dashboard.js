@@ -12,7 +12,7 @@
   var BADGES='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  function href(label){return esc(HREF.replace('%s', encodeURIComponent(label.split('/')[0])));}
+  function href(key){return esc(HREF.replace('%s', encodeURIComponent(key)));}
 
   function partition(entities, mkey){
     var groups={};
@@ -65,7 +65,7 @@
       var status={good:'clean',warn:'review',info:'note',crit:'blocked'}[kind];
       var members=cls.members.map(function(m){
         var flag=(m.rep?m.rep.t2w:m.t2w)?'':'';
-        return '<a class="chip'+(kind==='warn'?' flag':'')+'" href="'+href(m.label)+'">'+esc(m.label)+'</a>';
+        return '<a class="chip'+(kind==='warn'?' flag':'')+'" href="'+href(m.href)+'">'+esc(m.label)+'</a>';
       }).join('');
       card.innerHTML=
         '<button class="row" aria-expanded="false">'+
@@ -140,7 +140,7 @@
       }
       var t2=s.t2w?'<td><div class="mcell" style="'+clVars('info')+';background:var(--cl-soft);color:var(--cl);border-color:var(--cl-line)">T2w</div></td>'
                   :'<td><div class="mcell absent">—</div></td>';
-      return '<tr><td class="rh"><a class="chip" href="'+href(s.subject)+'">sub-'+esc(s.subject)+'</a></td>'+cells+t2+'</tr>';
+      return '<tr><td class="rh"><a class="chip" href="'+href(s.href)+'">sub-'+esc(s.subject)+'</a></td>'+cells+t2+'</tr>';
     }).join('');
     document.getElementById('matrix').innerHTML='<thead>'+head+'</thead><tbody>'+body+'</tbody>';
   }

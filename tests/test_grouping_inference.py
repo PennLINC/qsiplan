@@ -669,6 +669,17 @@ def test_acq_multipartid_invalid_label(tmp_path):
     assert 'multipartid-acq-invalid' in issue_codes(regrouped.errors)
 
 
+def test_acq_multipartid_allows_plus(tmp_path):
+    """'+' is a legal BIDS label character, so an 'acq-' MultipartID may use it."""
+    grouping = load_scenario('acq_multipart', tmp_path, strict=False)
+    records = [record for record in grouping.files.values() if record.is_dwi]
+    plus = [dataclasses.replace(record, multipart_id=('acq-part+A',)) for record in records]
+    regrouped = build_grouping(plus, subject_id='01')
+    assert 'multipartid-acq-invalid' not in issue_codes(regrouped.errors)
+    names = [concat.output_name for concat in regrouped.concatenation_groups.values()]
+    assert any('acq-part+A' in name for name in names)
+
+
 def test_name_collision(tmp_path):
     """Colliding output names are a hard error; the fix is 'acq-' MultipartIDs."""
     with pytest.raises(GroupingError, match='output-name-collision'):

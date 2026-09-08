@@ -43,22 +43,34 @@ def test_catalog_indexes_only_requested_subject_and_session(tmp_path):
     catalog = Bids2TableCatalog(root)
     assert catalog.subjects() == ['01', '02']
 
-    data = catalog.subject_data('02', session='01')
+    data = catalog.subject_data('02', session_filter=('01',))
     assert len(data['dwi']) == 1
     assert len(data['fmap']) == 1
     assert len(data['t1w']) == 1
     assert data['t2w'] == []
     assert all('/sub-02/ses-01/' in path for paths in data.values() for path in paths)
 
-    streamed = dict(catalog.iter_subject_data(['02', '01'], session='02', batch_size=1))
+    streamed = dict(catalog.iter_subject_data(['02', '01'], session_filter=('02',), batch_size=1))
     assert list(streamed) == ['02', '01']
     assert all(len(data['dwi']) == 1 for data in streamed.values())
+
+
+def test_catalog_enumeration_accepts_plus_in_labels(tmp_path):
+    """BIDS labels may contain '+' (e.g. template/cohort labels), so the
+    directory scan must keep them - while still rejecting non-label names."""
+    root = tmp_path / 'bids'
+    (root / 'sub-01+2' / 'ses-pre+post' / 'dwi').mkdir(parents=True)
+    (root / 'sub-01+2' / 'ses-2').mkdir()
+    (root / 'sub-bad_x').mkdir()  # '_' is not a legal label char -> excluded
+    catalog = Bids2TableCatalog(root)
+    assert catalog.subjects() == ['01+2']  # the '+' label kept, 'bad_x' dropped
+    assert catalog.sessions('01+2') == ['2', 'pre+post']
 
 
 def test_catalog_metadata_inheritance_is_strict(tmp_path):
     root = _dataset(tmp_path)
     catalog = Bids2TableCatalog(root)
-    data = catalog.subject_data('01', session='01')
+    data = catalog.subject_data('01', session_filter=('01',))
     records, issues = index_subject(catalog, data)
     dwi = next(record for record in records if record.is_dwi)
     assert dwi.signature.readout_time == 0.05
@@ -96,7 +108,7 @@ def test_annex_symlinked_data_files_still_resolve_sidecars(tmp_path):
     assert dwi_symlink.resolve().parent == store  # resolve() escapes the BIDS tree
 
     catalog = Bids2TableCatalog(root)
-    data = catalog.subject_data('01', session='01')
+    data = catalog.subject_data('01', session_filter=('01',))
     records, issues = index_subject(catalog, data)
     dwi = next(record for record in records if record.is_dwi)
     assert dwi.signature.pe_dir == 'j-'  # from the sidecar beside the symlink
@@ -109,7 +121,7 @@ def test_catalog_root_controls_inheritance_when_description_is_missing(tmp_path)
     root = _dataset(tmp_path)
     (root / 'dataset_description.json').unlink()
     catalog = Bids2TableCatalog(root)
-    data = catalog.subject_data('01', session='01')
+    data = catalog.subject_data('01', session_filter=('01',))
     records, _issues = index_subject(catalog, data)
     dwi = next(record for record in records if record.is_dwi)
     assert dwi.signature.readout_time == 0.05

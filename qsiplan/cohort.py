@@ -120,7 +120,7 @@ def _sessions_of(grouping):
     return sorted(s for s in sessions if s is not None) or [None]
 
 
-def build_cohort_data(catalog, subjects, *, session_id=None, policy=None, initial_method=None):
+def build_cohort_data(catalog, subjects, *, scope=None, policy=None, initial_method=None):
     """Compute the full embed for the cohort dashboard.
 
     For every subject: index once, build the grouping under ``policy``, and
@@ -128,49 +128,69 @@ def build_cohort_data(catalog, subjects, *, session_id=None, policy=None, initia
     session-level and one subject-level entity per subject-session / subject,
     each carrying per-method signatures and issue counts, plus the data facts
     (scan count, T2w presence) the completeness matrix needs.
+
+    Honors both scope axes. Under ``sessionwise`` each session is compiled as
+    its own isolated unit (so its signature reflects session-scoped anatomy and
+    it drills into its own page); otherwise the subject is compiled whole and
+    its per-session rows are slices of that one plan.
     """
     from .catalog import collect_subject_data
     from .explorer import build_for_policy
     from .models import GroupingPolicy
+    from .scope import SessionScope, plan_units
 
+    scope = scope or SessionScope()
     policy = policy if policy is not None else GroupingPolicy()
     session_entities = []
     subject_entities = []
 
     for subject in subjects:
-        subject_data = collect_subject_data(catalog, subject, session_id)
+        subject_data = collect_subject_data(catalog, subject, scope.session_filter)
         if not subject_data['dwi']:
             continue
         records, index_issues = index_subject(catalog, subject_data)
-        grouping = build_for_policy(records, subject, policy, index_issues)
-        plans = {key: compile_plan(grouping, sel) for key, _label, sel in COHORT_METHODS}
-
-        sessions = _sessions_of(grouping)
-        has_t2w = bool(grouping.anat_files('T2w'))
 
         subj_methods = {key: [] for key, _l, _s in COHORT_METHODS}
-        for session in sessions:
-            scans = sum(
-                1
-                for record in grouping.files.values()
-                if record.is_dwi and record.session == session
-            )
-            by_method = {
-                key: _session_facts(grouping, plans[key], session)
-                for key, _label, _sel in COHORT_METHODS
-            }
-            session_entities.append(
-                {
-                    'subject': subject,
-                    'session': session,
-                    'label': f'{subject}/{session}' if session else subject,
-                    'scans': scans,
-                    't2w': has_t2w,
-                    'byMethod': by_method,
+        subj_sessions = []
+        subj_scans = 0
+        subj_has_t2w = False
+        subject_href = None  # the unit a subject-level row drills into
+
+        for unit, unit_records in plan_units(subject, records, scope.model):
+            unit_key = unit.label[len('sub-') :]
+            if subject_href is None:
+                subject_href = unit_key
+            grouping = build_for_policy(unit_records, subject, policy, index_issues)
+            plans = {key: compile_plan(grouping, sel) for key, _label, sel in COHORT_METHODS}
+            has_t2w = bool(grouping.anat_files('T2w'))
+            subj_has_t2w = subj_has_t2w or has_t2w
+            subj_scans += sum(1 for record in grouping.files.values() if record.is_dwi)
+
+            for session in _sessions_of(grouping):
+                scans = sum(
+                    1
+                    for record in grouping.files.values()
+                    if record.is_dwi and record.session == session
+                )
+                by_method = {
+                    key: _session_facts(grouping, plans[key], session)
+                    for key, _label, _sel in COHORT_METHODS
                 }
-            )
-            for key in subj_methods:
-                subj_methods[key].append(by_method[key])
+                session_entities.append(
+                    {
+                        'subject': subject,
+                        'session': session,
+                        'label': f'{subject}/{session}' if session else subject,
+                        'href': unit_key,
+                        'scans': scans,
+                        't2w': has_t2w,
+                        'byMethod': by_method,
+                    }
+                )
+                for key in subj_methods:
+                    subj_methods[key].append(by_method[key])
+                if session is not None:
+                    subj_sessions.append(session)
 
         # A subject's signature is the multiset of its sessions' signatures.
         subj_by_method = {}
@@ -188,9 +208,10 @@ def build_cohort_data(catalog, subjects, *, session_id=None, policy=None, initia
             {
                 'subject': subject,
                 'label': subject,
-                'sessions': [s for s in sessions if s is not None],
-                'scans': sum(1 for record in grouping.files.values() if record.is_dwi),
-                't2w': has_t2w,
+                'href': subject_href,
+                'sessions': subj_sessions,
+                'scans': subj_scans,
+                't2w': subj_has_t2w,
                 'byMethod': subj_by_method,
             }
         )
@@ -209,7 +230,7 @@ def build_cohort_data(catalog, subjects, *, session_id=None, policy=None, initia
 
 
 def render_cohort_html(
-    catalog, subjects, *, session_id=None, policy=None, live=False, initial_method=None
+    catalog, subjects, *, scope=None, policy=None, live=False, initial_method=None
 ) -> str:
     """The standalone cohort dashboard for a dataset.
 
@@ -219,7 +240,7 @@ def render_cohort_html(
     page opens on; defaults to the first :data:`COHORT_METHODS` entry.
     """
     data = build_cohort_data(
-        catalog, subjects, session_id=session_id, policy=policy, initial_method=initial_method
+        catalog, subjects, scope=scope, policy=policy, initial_method=initial_method
     )
     data['summary'] = {
         'subjects': len(data['subject']),

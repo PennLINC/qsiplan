@@ -21,10 +21,10 @@ concatenation membership are independent by design.
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from itertools import combinations
 
+from .bids import is_bids_label
 from .models import (
     AUTO_PREFIX,
     ConcatenationGroup,
@@ -603,14 +603,21 @@ def resolve_application(
     return application, provenance, candidates_out, issues
 
 
-def _anat_for_session(records, session, suffix):
-    """Anatomical images for a session: same session, else session-less, else any."""
+def _anat_for_session(records, session, suffix, *, cross_session=True):
+    """Anatomical images for a session, by preference tier.
+
+    Same session first, then session-less (shared across all sessions), then -
+    unless ``cross_session`` is False - any other session's (the whole-subject
+    reference reaching across sessions).
+    """
     anat = [record for record in records if record.is_anat and record.suffix == suffix]
-    for candidates in (
+    tiers = [
         [record for record in anat if record.session == session],
         [record for record in anat if record.session is None],
-        anat,
-    ):
+    ]
+    if cross_session:
+        tiers.append(anat)
+    for candidates in tiers:
         if candidates:
             return sorted(candidates, key=lambda record: record.path)
     return []
@@ -682,11 +689,12 @@ def resolve_fieldmapless(
     - ``'t2w'``: a T2w-registration (T2Wreg) estimation from the T2w.
     - ``'invt1w'``: the inverted-contrast T1w (nipreps-style SyN prior) - the
       standalone niworkflows SyN-SDC estimation.
-    - ``'auto'``: resolved once per subject from data availability - a T1w
-      selects ``'synb0'``, otherwise a T2w selects ``'t2w'``, otherwise
-      nothing at all (with a warning). ``'invt1w'`` is unreachable through
-      ``'auto'``, since ``'synb0'`` outranks it whenever a T1w exists; only
-      an explicit ``--sdc-anat-reference invt1w`` selects it.
+    - ``'auto'``: resolved per session from that session's in-scope anatomy - a
+      T1w selects ``'synb0'``, otherwise a T2w selects ``'t2w'``, otherwise
+      nothing (with a warning), so different sessions may resolve differently.
+      ``'invt1w'`` is unreachable through ``'auto'``, since ``'synb0'`` outranks
+      it whenever a T1w exists; only an explicit ``--sdc-anat-reference invt1w``
+      selects it.
     - ``'none'`` (default): no anatomical SDC ever - series no fieldmap
       reaches are left uncorrected.
 
@@ -714,33 +722,52 @@ def resolve_fieldmapless(
         )
         return issues
 
-    method_name = sdc_anat_reference
-    prov = Provenance.FORCED
-    if sdc_anat_reference == 'auto':
-        if not force_sdc_anat_reference:
-            prov = Provenance.INFERRED
-        if any(record.is_anat and record.suffix == 'T1w' for record in records):
-            method_name = 'synb0'
-        elif any(record.is_anat and record.suffix == 'T2w' for record in records):
-            method_name = 't2w'
-        else:
-            issues.append(
-                warning(
-                    'sdc-anat-reference-auto-no-anatomicals',
-                    '--sdc-anat-reference auto found no T1w or T2w for this subject, so no '
-                    'anatomical susceptibility distortion correction is performed.',
-                )
-            )
-            return issues
-    if method_name == 'none':
+    if sdc_anat_reference == 'none':
         return issues
 
-    method, id_stem, suffix = _ANAT_SDC_METHODS[method_name]
+    prov = Provenance.FORCED
+    if sdc_anat_reference == 'auto' and not force_sdc_anat_reference:
+        prov = Provenance.INFERRED
 
-    def _apply(paths, session):
+    def _resolve_method(session):
+        """The concrete method for one session under ``'auto'``.
+
+        Prefers this session's own or shared (session-less) anatomy - a T1w
+        (synb0) before a T2w (t2wreg) - so a session with its own T2w is not
+        overridden by another session's T1w; only when neither is present does
+        auto reach across sessions. An explicit method is returned unchanged.
+        """
+        if sdc_anat_reference != 'auto':
+            return sdc_anat_reference
+        for cross in (False, True):
+            if _anat_for_session(records, session, 'T1w', cross_session=cross):
+                return 'synb0'
+            if _anat_for_session(records, session, 'T2w', cross_session=cross):
+                return 't2w'
+        return 'none'
+
+    def _apply(paths, session, method_name):
+        method, id_stem, suffix = _ANAT_SDC_METHODS[method_name]
         anat = _anat_for_session(records, session, suffix)
         if not anat:
             return False
+        # Tier-3 reach: the only anatomy available comes from another session
+        # (not this one, not a shared session-less image). Reachable only in the
+        # whole-subject models - sessionwise units never see other sessions.
+        crossed = sorted({rec.session for rec in anat if rec.session not in (None, session)})
+        if crossed:
+            sessions_txt = ', '.join(f'ses-{other}' for other in crossed)
+            issues.append(
+                warning(
+                    'cross-session-anat-reference',
+                    f'ses-{session} has no {suffix} for {method_name} SDC, so the '
+                    f'{suffix} from {sessions_txt} is used instead. Anatomy differs '
+                    'between sessions (head position, and real change in longitudinal '
+                    'data) - verify this is appropriate, or isolate sessions with '
+                    '--subject-anatomical-reference sessionwise.',
+                    tuple(paths),
+                )
+            )
         id_parts = [AUTO_PREFIX + id_stem]
         if session:
             id_parts.append(f'ses-{session}')
@@ -757,7 +784,7 @@ def resolve_fieldmapless(
     for path, record in sorted(dwi_records.items()):
         by_session[record.session].append(path)
 
-    pedir_error = _ANAT_SDC_PEDIR_ERRORS.get(method_name)
+    auto_unresolved: list[str] = []  # 'auto' sessions with no anatomy in scope
     for session, paths in sorted(by_session.items(), key=lambda kv: str(kv[0])):
         if force_sdc_anat_reference:
             targets = list(paths)
@@ -765,15 +792,32 @@ def resolve_fieldmapless(
             targets = [p for p in paths if application[p] is None]
         if not targets:
             continue
+        method_name = _resolve_method(session)
+        if method_name == 'none':
+            # Only reachable through 'auto' when this session has no anatomy.
+            auto_unresolved.extend(targets)
+            continue
+        pedir_error = _ANAT_SDC_PEDIR_ERRORS.get(method_name)
         if pedir_error is not None:
             missing_pedir = [p for p in targets if dwi_records[p].signature.pe_dir is None]
             if missing_pedir:
                 code, message = pedir_error
                 issues.append(error(code, message, tuple(missing_pedir)))
                 targets = [p for p in targets if p not in missing_pedir]
-        if targets and not _apply(targets, session):
+        if targets and not _apply(targets, session, method_name):
             code, message = _ANAT_SDC_MISSING_ANAT_ERRORS[method_name]
             issues.append(error(code, message, tuple(targets)))
+
+    if auto_unresolved:
+        issues.append(
+            warning(
+                'sdc-anat-reference-auto-no-anatomicals',
+                '--sdc-anat-reference auto found no T1w or T2w for '
+                f'{len(auto_unresolved)} DWI series, so they receive no anatomical '
+                'susceptibility distortion correction.',
+                tuple(sorted(auto_unresolved)),
+            )
+        )
 
     return issues
 
@@ -1022,7 +1066,7 @@ def build_concatenation_groups(
         acq = None
         if provenance is Provenance.CURATED and multipart_id.startswith('acq-'):
             label = multipart_id[len('acq-') :]
-            if re.fullmatch('[0-9a-zA-Z]+', label):
+            if is_bids_label(label):
                 acq = label
             else:
                 issues.append(

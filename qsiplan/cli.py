@@ -24,9 +24,15 @@ from qsiplan import (
     report_text,
 )
 from qsiplan.catalog import Bids2TableCatalog
-from qsiplan.cli_spec import add_plan_arguments, policy_from_namespace, selection_from_namespace
+from qsiplan.cli_spec import (
+    add_plan_arguments,
+    policy_from_namespace,
+    scope_from_namespace,
+    selection_from_namespace,
+)
 from qsiplan.explorer import build_for_policy
 from qsiplan.report import default_preview_selections
+from qsiplan.scope import plan_units
 
 
 def _path_exists(path, parser):
@@ -86,9 +92,12 @@ def _build_parser():
         help='Subject label(s) to preview (without "sub-"). Default: all subjects.',
     )
     parser.add_argument(
-        '--session-id',
+        '--session-label',
+        nargs='+',
         default=None,
-        help='Restrict to one session label (without "ses-").',
+        help='Session label(s) to include (without "ses-"). Default: all sessions. '
+        'This is a filter only; --subject-anatomical-reference decides how the '
+        'included sessions map to processing.',
     )
     # Every plan-relevant flag - the method axis (--hmc-method,
     # --shoreline-model, --sdc-method) and the grouping-policy axis (--ignore,
@@ -136,14 +145,14 @@ def _build_parser():
     return parser
 
 
-def _per_subject_path(path: str, subject: str, multi: bool) -> str:
-    """Insert ``sub-<label>`` before the extension when writing many subjects."""
+def _per_unit_path(path: str, unit, multi: bool) -> str:
+    """Insert the unit label (``sub-01`` / ``sub-01_ses-02``) when writing many."""
     if not multi:
         return path
     base, dot, ext = path.rpartition('.')
     stem = base if dot else path
     suffix = f'.{ext}' if dot else ''
-    return f'{stem}_sub-{subject}{suffix}'
+    return f'{stem}_{unit.label}{suffix}'
 
 
 def _selections(args):
@@ -172,6 +181,7 @@ def main(argv=None):
         return 1
 
     policy = policy_from_namespace(args)
+    scope = scope_from_namespace(args)
     initial_selection = selections[0] if args.hmc_method else None
 
     if args.serve:
@@ -182,7 +192,7 @@ def main(argv=None):
         app = ExplorerApp(
             catalog,
             subjects,
-            session_id=args.session_id,
+            scope=scope,
             base_policy=policy,
             initial_selection=initial_selection,
         )
@@ -196,60 +206,69 @@ def main(argv=None):
             render_cohort_html(
                 catalog,
                 subjects,
-                session_id=args.session_id,
+                scope=scope,
                 policy=policy,
                 live=False,
                 initial_method=args.hmc_method,
             )
         )
         print(f'wrote {out}')
-        # Sibling per-subject explorer pages so the dashboard's static
-        # drill-down links (sub-<label>.html) resolve without a server.
-        for subject, subject_data in catalog.iter_subject_data(subjects, args.session_id):
+        # Sibling per-unit explorer pages so the dashboard's static drill-down
+        # links resolve without a server: sub-<label>.html subject-wide, one
+        # sub-<label>_ses-<ses>.html per session under sessionwise.
+        for subject, subject_data in catalog.iter_subject_data(subjects, scope.session_filter):
             if not subject_data['dwi']:
                 continue
             records, index_issues = index_subject(catalog, subject_data)
-            sibling = out.parent / f'sub-{subject}.html'
-            sibling.write_text(
-                render_explorer_html(
-                    records,
-                    subject,
-                    index_issues=index_issues,
-                    initial_policy=policy,
-                    initial_selection=initial_selection,
+            for unit, unit_records in plan_units(subject, records, scope.model):
+                sibling = out.parent / f'{unit.label}.html'
+                sibling.write_text(
+                    render_explorer_html(
+                        unit_records,
+                        subject,
+                        session=unit.session,
+                        index_issues=index_issues,
+                        initial_policy=policy,
+                        initial_selection=initial_selection,
+                    )
                 )
-            )
-            print(f'  sub-{subject}: wrote {sibling.name}')
+                print(f'  {unit.label}: wrote {sibling.name}')
         return 0
 
+    # More than one output page means the filename must carry the unit label:
+    # several subjects, or sessionwise (one page per session of a subject).
+    multi = len(subjects) > 1 or scope.sessionwise
     exit_code = 0
-    for subject, subject_data in catalog.iter_subject_data(subjects, args.session_id):
+    for subject, subject_data in catalog.iter_subject_data(subjects, scope.session_filter):
         if not subject_data['dwi']:
             print(f'sub-{subject}: no DWI files found, skipping.\n')
             continue
 
-        # One fieldmaps-included index pass serves the terminal report and
-        # (via record filtering) every policy the HTML page can select.
+        # One fieldmaps-included index pass per subject; plan_units then applies
+        # the anatomical-reference model (subject-wide, or one unit per session).
         records, index_issues = index_subject(catalog, subject_data)
-        grouping = build_for_policy(records, subject, policy, index_issues)
-        print(report_text(grouping))
-        for selection in selections:
-            print(describe_processing(grouping, selection))
-        multi = len(subjects) > 1
-        if args.html:
-            path = _per_subject_path(args.html, subject, multi)
-            page = render_explorer_html(
-                records,
-                subject,
-                index_issues=index_issues,
-                initial_policy=policy,
-                initial_selection=initial_selection,
-            )
-            with open(path, 'w') as fobj:
-                fobj.write(page)
-            print(f'sub-{subject}: wrote {path}')
-        if grouping.errors:
-            exit_code = 1
+        for unit, unit_records in plan_units(subject, records, scope.model):
+            grouping = build_for_policy(unit_records, subject, policy, index_issues)
+            if unit.sessionwise:
+                print(f'=== {unit.label} (session-wise) ===')
+            print(report_text(grouping))
+            for selection in selections:
+                print(describe_processing(grouping, selection))
+            if args.html:
+                path = _per_unit_path(args.html, unit, multi)
+                page = render_explorer_html(
+                    unit_records,
+                    subject,
+                    session=unit.session,
+                    index_issues=index_issues,
+                    initial_policy=policy,
+                    initial_selection=initial_selection,
+                )
+                with open(path, 'w') as fobj:
+                    fobj.write(page)
+                print(f'{unit.label}: wrote {path}')
+            if grouping.errors:
+                exit_code = 1
 
     return exit_code
 

@@ -8,9 +8,10 @@ SQL index before it can show one subject.  This module is that narrow boundary.
 from __future__ import annotations
 
 import os.path as op
-import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+from .bids import is_bids_label
 
 
 @runtime_checkable
@@ -21,7 +22,9 @@ class DatasetCatalog(Protocol):
 
     def subjects(self) -> list[str]: ...
 
-    def subject_data(self, label: str, session: str | None = None) -> dict[str, list[str]]: ...
+    def sessions(self, label: str, session_filter=None) -> list[str]: ...
+
+    def subject_data(self, label: str, session_filter=None) -> dict[str, list[str]]: ...
 
 
 class Bids2TableCatalog:
@@ -35,17 +38,34 @@ class Bids2TableCatalog:
         return sorted(
             path.name[4:]
             for path in self.root.glob('sub-*')
-            if re.fullmatch(r'sub-[A-Za-z0-9]+', path.name) and path.is_dir()
+            if is_bids_label(path.name[4:]) and path.is_dir()
         )
 
-    def subject_data(self, label: str, session: str | None = None) -> dict[str, list[str]]:
+    def sessions(self, label: str, session_filter=None) -> list[str]:
+        """Session labels for a subject, from the directory tree (no indexing).
+
+        Enumerates sessionwise processing units without paying for a full
+        index; ``session_filter`` narrows the result exactly as the catalog's
+        session mask does.
+        """
+        found = sorted(
+            path.name[4:]
+            for path in (self.root / f'sub-{label}').glob('ses-*')
+            if is_bids_label(path.name[4:]) and path.is_dir()
+        )
+        if session_filter is not None:
+            allowed = set(session_filter)
+            found = [session for session in found if session in allowed]
+        return found
+
+    def subject_data(self, label: str, session_filter=None) -> dict[str, list[str]]:
         """Relevant image files for one subject, grouped by QSIPlan input key."""
         import bids2table as b2t
 
         table = b2t.index_dataset(self.root, include_subjects=f'sub-{label}')
-        return self._subject_data_from_table(table, [label], session)[label]
+        return self._subject_data_from_table(table, [label], session_filter)[label]
 
-    def iter_subject_data(self, labels, session: str | None = None, batch_size: int = 512):
+    def iter_subject_data(self, labels, session_filter=None, batch_size: int = 512):
         """Yield subject data from bounded multi-subject index batches."""
         import bids2table as b2t
 
@@ -56,10 +76,10 @@ class Bids2TableCatalog:
                 self.root,
                 include_subjects=[f'sub-{label}' for label in batch],
             )
-            data = self._subject_data_from_table(table, batch, session)
+            data = self._subject_data_from_table(table, batch, session_filter)
             yield from ((label, data[label]) for label in batch)
 
-    def _subject_data_from_table(self, table, labels, session):
+    def _subject_data_from_table(self, table, labels, session_filter):
         import pyarrow as pa
         import pyarrow.compute as pc
 
@@ -71,8 +91,16 @@ class Bids2TableCatalog:
             pc.is_in(table['datatype'], value_set=pa.array(['dwi', 'fmap', 'anat'])),
             pc.is_in(table['ext'], value_set=pa.array(['.nii', '.nii.gz'])),
         )
-        if session is not None:
-            mask = pc.and_(mask, pc.equal(table['ses'], session))
+        if session_filter is not None:
+            # The filter is applied uniformly, but a session-less anat/fmap is
+            # shared across all sessions (BIDS), so it is kept alongside the
+            # requested sessions; DWIs are matched strictly.
+            in_filter = pc.fill_null(
+                pc.is_in(table['ses'], value_set=pa.array(list(session_filter))), False
+            )
+            is_dwi = pc.equal(table['datatype'], 'dwi')
+            shared = pc.or_(in_filter, pc.is_null(table['ses']))
+            mask = pc.and_(mask, pc.if_else(is_dwi, in_filter, shared))
         rows = table.filter(mask).select(['sub', 'datatype', 'suffix', 'path']).to_pylist()
 
         for row in rows:
@@ -92,10 +120,10 @@ class Bids2TableCatalog:
         }
 
 
-def collect_subject_data(source, label: str, session: str | None = None):
+def collect_subject_data(source, label: str, session_filter=None):
     """Collect one subject through a catalog or a legacy layout-like object."""
     if isinstance(source, DatasetCatalog):
-        return source.subject_data(label, session)
+        return source.subject_data(label, session_filter)
 
     query = {
         'subject': label,
@@ -103,6 +131,6 @@ def collect_subject_data(source, label: str, session: str | None = None):
         'extension': ['.nii', '.nii.gz'],
         'return_type': 'file',
     }
-    if session:
-        query['session'] = session
+    if session_filter:
+        query['session'] = list(session_filter)
     return {'dwi': sorted(op.abspath(path) for path in source.get(**query))}

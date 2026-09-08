@@ -31,6 +31,7 @@ from .interactive import explorer_view, render_explorer_html
 from .metadata import index_subject
 from .methods import parse_combined_key
 from .models import GroupingPolicy
+from .scope import ProcessingUnit, SessionScope, plan_units
 
 
 @dataclass
@@ -69,7 +70,7 @@ class ExplorerApp:
         source,
         subjects,
         *,
-        session_id=None,
+        scope: SessionScope | None = None,
         base_policy: GroupingPolicy | None = None,
         initial_selection=None,
         max_cached_subjects: int = 16,
@@ -77,7 +78,7 @@ class ExplorerApp:
     ):
         self._source = source
         self.subjects = list(subjects)
-        self._session_id = session_id
+        self._scope = scope or SessionScope()
         self._base_policy = canonical_explorer_policy(base_policy)
         self._initial_selection = initial_selection
         self._max_cached_subjects = max(1, max_cached_subjects)
@@ -86,55 +87,85 @@ class ExplorerApp:
         self._states = OrderedDict()
         self._index_lock = threading.Lock()
         self._index_html = None
+        # The processing unit is the routing atom: one per subject
+        # (subject-wide), or one per session under sessionwise. Enumerated from
+        # the directory tree (no indexing); records are sliced lazily per unit.
+        self.units = self._enumerate_units()
+        self._units_by_key = {unit.label[len('sub-') :]: unit for unit in self.units}
 
-    def _state(self, label):
-        """A bounded, lazily indexed state for one subject."""
-        if label not in self.subjects:
-            raise KeyError(label)
+    def _enumerate_units(self):
+        units = []
+        for subject in self.subjects:
+            if self._scope.sessionwise:
+                sessions = self._source.sessions(subject, self._scope.session_filter)
+                if sessions:
+                    units.extend(
+                        ProcessingUnit(subject, (ses,), sessionwise=True) for ses in sessions
+                    )
+                    continue
+            units.append(ProcessingUnit(subject, None))
+        return units
+
+    def _state(self, key):
+        """A bounded, lazily indexed state for one processing unit."""
+        unit = self._units_by_key.get(key)
+        if unit is None:
+            raise KeyError(key)
         with self._lock:
-            state = self._states.get(label)
+            state = self._states.get(key)
             if state is not None:
-                self._states.move_to_end(label)
-                return state
+                self._states.move_to_end(key)
+                return unit, state
 
         # Dataset I/O and grouping happen outside the global cache lock, so a
-        # large first request does not block already-indexed subjects.
-        subject_data = collect_subject_data(self._source, label, self._session_id)
+        # large first request does not block already-indexed units.
+        subject_data = collect_subject_data(self._source, unit.subject, self._scope.session_filter)
         if not subject_data['dwi']:
-            raise KeyError(label)
+            raise KeyError(key)
         records, issues = index_subject(self._source, subject_data)
-        state = _SubjectState(records, issues, self._max_cached_policies)
+        unit_records = next(
+            (
+                sliced
+                for candidate, sliced in plan_units(unit.subject, records, self._scope.model)
+                if candidate.label == unit.label
+            ),
+            None,
+        )
+        if unit_records is None:  # e.g. a globbed session directory with no DWI
+            raise KeyError(key)
+        state = _SubjectState(unit_records, issues, self._max_cached_policies)
         with self._lock:
-            state = self._states.setdefault(label, state)
-            self._states.move_to_end(label)
+            state = self._states.setdefault(key, state)
+            self._states.move_to_end(key)
             while len(self._states) > self._max_cached_subjects:
                 self._states.popitem(last=False)
-        return state
+        return unit, state
 
-    def page(self, label: str) -> str:
-        """The live explorer page for one subject."""
-        state = self._state(label)
-        _signature, grouping = state.grouping(label, self._base_policy)
+    def page(self, key: str) -> str:
+        """The live explorer page for one processing unit."""
+        unit, state = self._state(key)
+        _signature, grouping = state.grouping(unit.subject, self._base_policy)
         grid = live_policy_grid(grouping, self._base_policy)
         return render_explorer_html(
             state.records,
-            label,
+            unit.subject,
+            session=unit.session,
             index_issues=state.issues,
             initial_policy=self._base_policy,
             initial_selection=self._initial_selection,
-            live_endpoint=f'/sub-{label}/view',
+            live_endpoint=f'/sub-{key}/view',
             grid=grid,
         )
 
-    def view(self, label: str, query: str) -> dict:
+    def view(self, key: str, query: str) -> dict:
         """One live view: the query string is the canonical combined key."""
         policy, selection = parse_combined_key(query)
-        state = self._state(label)
-        key = policy.policy_key()
-        signature, grouping = state.grouping(label, policy)
+        unit, state = self._state(key)
+        policy_key = policy.policy_key()
+        signature, grouping = state.grouping(unit.subject, policy)
         resolved = explorer_view(grouping, selection)
         return {
-            'policyKey': key,
+            'policyKey': policy_key,
             'selectionKey': selection.combination_key(),
             'policy': {'sig': signature, 'cli': policy.cli_phrase()},
             **resolved,
@@ -159,7 +190,7 @@ class ExplorerApp:
                 self._index_html = render_cohort_html(
                     self._source,
                     self.subjects,
-                    session_id=self._session_id,
+                    scope=self._scope,
                     policy=self._base_policy,
                     live=True,
                     initial_method=initial_method,
@@ -175,9 +206,9 @@ class _Handler(BaseHTTPRequestHandler):
         path = unquote(parsed.path)
         try:
             if path in ('', '/'):
-                if len(self.app.subjects) == 1:
+                if len(self.app.units) == 1:
                     self.send_response(302)
-                    self.send_header('Location', f'/sub-{quote(self.app.subjects[0], safe="")}')
+                    self.send_header('Location', f'/{quote(self.app.units[0].label, safe="")}')
                     self.end_headers()
                     return
                 self._send(200, 'text/html', self.app.index_page())
