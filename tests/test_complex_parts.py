@@ -186,3 +186,101 @@ def test_report_names_the_phase_companion_but_never_lists_it(tmp_path):
     assert '      with phase image sub-01_dir-AP_part-phase_dwi.nii.gz' in report
     assert '- sub-01_dir-AP_part-phase_dwi.nii.gz' not in report
     assert 'Output "sub-01"' in report
+
+
+# --- linkage curated on either part applies to the whole acquisition ---------
+# A fieldmap cannot be intended for only one part of a complex pair, so
+# IntendedFor / B0Field* / MultipartID found on the phase sidecar count for
+# the magnitude's record, which is the acquisition.
+
+MAG_EPI = 'fmap/sub-01_dir-PA_part-mag_epi.json'
+PHASE_EPI = 'fmap/sub-01_dir-PA_part-phase_epi.json'
+MAG_DWI = 'dwi/sub-01_dir-AP_part-mag_dwi.json'
+PHASE_DWI = 'dwi/sub-01_dir-AP_part-phase_dwi.json'
+
+
+def _rewrite(path, **updates):
+    """Set (or, with ``None``, remove) keys in one JSON sidecar."""
+    metadata = json.loads(path.read_text())
+    for key, value in updates.items():
+        if value is None:
+            metadata.pop(key, None)
+        else:
+            metadata[key] = value
+    path.write_text(json.dumps(metadata))
+
+
+def _grouping_after(tmp_path, rewrites):
+    """complex_pepolar with its sidecars rewritten: ``[(relpath, updates), ...]``."""
+    layout, subject_data = build_layout('complex_pepolar', tmp_path)
+    for relpath, updates in rewrites:
+        _rewrite(tmp_path / 'complex_pepolar' / 'sub-01' / relpath, **updates)
+    return build_dwi_grouping(layout, subject_data, strict=False)
+
+
+def test_intendedfor_on_the_phase_epi_alone_covers_the_acquisition(tmp_path):
+    grouping = _grouping_after(tmp_path, [(MAG_EPI, {'IntendedFor': None})])
+    (estimation,) = grouping.estimations.values()
+    assert estimation.provenance is Provenance.TRANSLATED
+    (dwi,) = grouping.dwi_files
+    assert grouping.application[dwi] == estimation.b0field_id
+    assert 'sub-01_dir-AP_part-mag_dwi.nii.gz' in _names(estimation.sources)
+
+
+def test_split_intendedfor_across_parts_is_one_link_not_a_disagreement(tmp_path):
+    """mag epi -> mag dwi and phase epi -> phase dwi name one acquisition twice."""
+    grouping = _grouping_after(
+        tmp_path,
+        [
+            (MAG_EPI, {'IntendedFor': ['dwi/sub-01_dir-AP_part-mag_dwi.nii.gz']}),
+            (PHASE_EPI, {'IntendedFor': ['dwi/sub-01_dir-AP_part-phase_dwi.nii.gz']}),
+        ],
+    )
+    assert not _issues(grouping, 'complex-parts-disagree')
+    assert not _issues(grouping, 'intendedfor-missing-target')
+    (estimation,) = grouping.estimations.values()
+    (dwi,) = grouping.dwi_files
+    assert grouping.application[dwi] == estimation.b0field_id
+
+
+def test_b0field_curated_on_the_phase_sidecars_alone_covers_the_acquisition(tmp_path):
+    grouping = _grouping_after(
+        tmp_path,
+        [
+            (MAG_EPI, {'IntendedFor': None}),
+            (PHASE_EPI, {'IntendedFor': None, 'B0FieldIdentifier': 'pepolar'}),
+            (PHASE_DWI, {'B0FieldIdentifier': 'pepolar', 'B0FieldSource': 'pepolar'}),
+        ],
+    )
+    assert not _issues(grouping, 'complex-parts-disagree')
+    estimation = grouping.estimations['pepolar']
+    assert estimation.provenance is Provenance.CURATED
+    assert _names(estimation.sources) == [
+        'sub-01_dir-AP_part-mag_dwi.nii.gz',
+        'sub-01_dir-PA_part-mag_epi.nii.gz',
+    ]
+    (dwi,) = grouping.dwi_files
+    assert grouping.application[dwi] == 'pepolar'
+    # The adopted linkage is visible on the magnitude's record.
+    assert grouping.files[dwi].b0field_sources == ('pepolar',)
+
+
+def test_parts_disagreeing_on_b0fieldsource_warn_and_the_magnitude_wins(tmp_path):
+    grouping = _grouping_after(
+        tmp_path,
+        [
+            (MAG_EPI, {'IntendedFor': None, 'B0FieldIdentifier': 'pepolar'}),
+            (PHASE_EPI, {'IntendedFor': None}),
+            (MAG_DWI, {'B0FieldIdentifier': 'pepolar', 'B0FieldSource': 'pepolar'}),
+            (PHASE_DWI, {'B0FieldSource': 'somethingelse'}),
+        ],
+    )
+    (issue,) = _issues(grouping, 'complex-parts-disagree')
+    assert issue.severity == 'warning'
+    assert 'B0FieldSource' in issue.message
+    assert _names(issue.files) == [
+        'sub-01_dir-AP_part-mag_dwi.nii.gz',
+        'sub-01_dir-AP_part-phase_dwi.nii.gz',
+    ]
+    (dwi,) = grouping.dwi_files
+    assert grouping.application[dwi] == 'pepolar'

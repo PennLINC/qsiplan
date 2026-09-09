@@ -321,6 +321,49 @@ def _load_metadata(path, inheritance, issues, cache, invalid_sidecars):
     return metadata
 
 
+#: Sidecar fields that link an acquisition to its fieldmaps and outputs. Both
+#: parts of a complex-valued pair are one acquisition, so a link curated on
+#: either part applies to it. Membership-like fields are unioned; the
+#: single-valued ones follow the magnitude, with a warning on disagreement.
+_UNIONED_LINKAGE = ('IntendedFor', 'B0FieldIdentifier')
+_SINGLE_LINKAGE = ('B0FieldSource', 'MultipartID')
+
+
+def _adopt_companion_linkage(path, phase_path, metadata, inheritance, issues, cache, invalid):
+    """Fold the phase companion's fieldmap/output linkage into the magnitude's.
+
+    A fieldmap cannot be intended for only one part of a complex pair, so
+    linkage curated on the phase sidecar alone counts for the acquisition.
+    ``IntendedFor``/``B0FieldIdentifier`` entries from both parts are
+    combined (a converter that links mag-to-mag and phase-to-phase names one
+    acquisition twice, not two acquisitions), while ``B0FieldSource`` and
+    ``MultipartID`` are single choices: the magnitude's wins, and a
+    disagreement is reported.
+    """
+    phase_metadata = _load_metadata(phase_path, inheritance, issues, cache, invalid)
+    merged = dict(metadata)
+    for key in _UNIONED_LINKAGE:
+        if key in phase_metadata:
+            own = _normalize_to_tuple(merged.get(key))
+            merged[key] = list(dict.fromkeys((*own, *_normalize_to_tuple(phase_metadata[key]))))
+    for key in _SINGLE_LINKAGE:
+        if key not in phase_metadata:
+            continue
+        if key not in merged:
+            merged[key] = phase_metadata[key]
+        elif _normalize_to_tuple(merged[key]) != _normalize_to_tuple(phase_metadata[key]):
+            issues.append(
+                warning(
+                    'complex-parts-disagree',
+                    f'{op.basename(path)} and its phase image {op.basename(phase_path)} '
+                    f'disagree on {key} ({merged[key]!r} vs {phase_metadata[key]!r}). '
+                    "Both parts are one acquisition; the magnitude's value is used.",
+                    (path, phase_path),
+                )
+            )
+    return merged
+
+
 def _record_from_file(
     path: str,
     inheritance,
@@ -336,6 +379,11 @@ def _record_from_file(
 ) -> FileRecord:
     path = op.abspath(path)
     metadata = _load_metadata(path, inheritance, issues, metadata_cache, invalid_sidecars)
+    phase_path = (companion_of or {}).get(path)
+    if phase_path is not None:
+        metadata = _adopt_companion_linkage(
+            path, phase_path, metadata, inheritance, issues, metadata_cache, invalid_sidecars
+        )
     entities = parse_file_entities(path)
     datatype = entities.get('datatype') or ('dwi' if path in known_dwi_files else 'fmap')
 

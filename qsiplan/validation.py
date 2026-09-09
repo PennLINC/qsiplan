@@ -100,6 +100,11 @@ ISSUE_CODES: dict[str, IssueSpec] = {
         'A part-phase image has no magnitude sibling to accompany, so it was ignored.',
         'warning',
     ),
+    'complex-parts-disagree': _spec(
+        'The magnitude and phase sidecars of a complex pair disagree on a linkage field '
+        "(B0FieldSource/MultipartID); the magnitude's value is used.",
+        'warning',
+    ),
     # ---- curated fieldmap linkage (E1) --------------------------------------
     'reserved-b0field-prefix': _spec(
         "A curated B0FieldIdentifier uses the reserved 'auto+' prefix.", 'error'
