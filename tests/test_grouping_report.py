@@ -83,11 +83,18 @@ GOLDEN_CASES = [
     ('partial_pair', {}, 'partial_pair'),
     ('shell_mix', {}, 'shell_mix'),
     ('nonshelled_pair', {}, 'nonshelled_pair'),
+    # Complex-valued (part-mag/part-phase) acquisitions: phase is a companion,
+    # named under its magnitude and never listed as a series or a source.
+    # nibs_style is also non-shelled: eddy is refused and TORTOISE is its HMC.
+    ('nibs_style', {}, 'nibs_style'),
+    ('complex_pepolar', {}, 'complex_pepolar'),
+    ('complex_realimag', {}, 'complex_realimag'),
 ]
 
 #: Flag variants with no golden file: invariant coverage only.
 FLAG_VARIANTS = [
     ('hcp_style', {'separate_all_dwis': True}),
+    ('complex_pepolar', {'separate_all_dwis': True}),
     ('reshim', {'ignore_shims': True}),
     ('abcd_style', {'ignore_fieldmaps': True}),
     ('t2w_hcp', {'sdc_anat_reference': 't2w', 'force_sdc_anat_reference': True}),

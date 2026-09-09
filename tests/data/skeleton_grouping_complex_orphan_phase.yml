@@ -1,0 +1,28 @@
+# A part-phase DWI whose magnitude was never exported, alongside a normal
+# complex pair. Expected: the orphan phase is ignored with a warning, the AP
+# pair is one series with its phase companion, and - the PA magnitude being
+# absent - there is no reverse phase-encoding partner and no fieldmap.
+'01':
+  - anat:
+      - suffix: T1w
+    dwi:
+      - dir: AP
+        part: mag
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: AP
+        part: phase
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          Units: arbitrary
+      - dir: PA
+        part: phase
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          Units: arbitrary

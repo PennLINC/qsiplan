@@ -68,6 +68,21 @@ class PreprocUnit:
         return tuple(self.grouping.files[path] for path in self.dwi_files)
 
     @property
+    def dwi_phase_files(self) -> dict[str, str]:
+        """Phase companion of each complex-valued member series, keyed by the
+        magnitude path (the same absolute path as in ``dwi_files``).
+
+        Series with no ``part-phase`` sibling are absent, so an empty mapping
+        means a magnitude-only acquisition. This is the one API the workflow
+        reads to find phase data; it never re-globs the dataset.
+        """
+        return {
+            path: self.grouping.files[path].phase_path
+            for path in self.dwi_files
+            if self.grouping.files[path].phase_path
+        }
+
+    @property
     def is_pepolar(self) -> bool:
         return self.method is CorrectionMethod.PEPOLAR
 
@@ -404,7 +419,7 @@ def _merged_metadata(records) -> tuple[dict, dict]:
 
 
 def _unit_scan_grouping(unit: PreprocUnit) -> dict:
-    return {
+    scan_grouping = {
         'output_name': unit.output_name,
         'method': unit.method.value if unit.method else None,
         'dwi_series': [op.basename(path) for path in unit.dwi_files],
@@ -412,6 +427,14 @@ def _unit_scan_grouping(unit: PreprocUnit) -> dict:
         if unit.estimation
         else [],
     }
+    phase_of = unit.dwi_phase_files
+    if phase_of:
+        # Complex-valued input: name the phase images that were combined with
+        # the listed magnitudes, in the same order.
+        scan_grouping['dwi_phase_series'] = [
+            op.basename(phase_of[path]) for path in unit.dwi_files if path in phase_of
+        ]
+    return scan_grouping
 
 
 def unit_to_sidecar(unit: PreprocUnit) -> dict:

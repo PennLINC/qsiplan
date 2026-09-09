@@ -69,6 +69,27 @@ class TestDeriveOutputName:
             == 'sub-1_ses-2'
         )
 
+    def test_part_never_names_an_output(self):
+        # Complex-valued data: the derivative is the magnitude, so ``part-mag``
+        # is dropped whether one file or several name the output, and the
+        # forced acq label still lands right after the subject.
+        assert (
+            derive_output_name(['/d/sub-1/dwi/sub-1_dir-AP_part-mag_dwi.nii.gz']) == 'sub-1_dir-AP'
+        )
+        assert (
+            derive_output_name(
+                [
+                    '/d/sub-1/dwi/sub-1_dir-AP_part-mag_dwi.nii.gz',
+                    '/d/sub-1/dwi/sub-1_dir-PA_part-mag_dwi.nii.gz',
+                ]
+            )
+            == 'sub-1'
+        )
+        assert (
+            derive_output_name(['/d/sub-1/dwi/sub-1_dir-AP_part-mag_dwi.nii.gz'], acq='x')
+            == 'sub-1_acq-x_dir-AP'
+        )
+
     @pytest.mark.parametrize('extension', ['.nii', '.nii.gz'])
     def test_extensions(self, extension):
         assert derive_output_name([f'/d/sub-1/dwi/sub-1_dir-AP_dwi{extension}']) == 'sub-1_dir-AP'

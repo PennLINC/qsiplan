@@ -68,10 +68,13 @@ def _entity_stem(path: str) -> str:
     share the stem ``sub-01_acq-x``, which is how sidecar-companion files
     (phasediff + magnitudes, phase1 + phase2) are recognized. The split is the
     package's one BIDS-name parser (:func:`~.bids._parse_bids_name`), so a
-    name with no entities at all falls back to its bare basename.
+    name with no entities at all falls back to its bare basename. ``part-`` is
+    dropped: the magnitude and phase of a complex-valued acquisition share one
+    stem.
     """
     entities, _suffix, _extension = _parse_bids_name(path)
-    return '_'.join(f'{key}-{value}' for key, value in entities.items()) or strip_nii_ext(path)
+    stem = '_'.join(f'{key}-{value}' for key, value in entities.items() if key != 'part')
+    return stem or strip_nii_ext(path)
 
 
 def _classify_method(records: list[FileRecord]) -> CorrectionMethod | None:

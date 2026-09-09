@@ -72,12 +72,19 @@ def test_nibs_style(tmp_path):
     assert unit.output_name == 'sub-01'
     assert unit.has_bidirectional_dwi
     assert unit.pepolar_fieldmap_type == 'rpe_series'
-    assert len(unit.dwi_files) == 4
+    # The phase images are companions of their magnitudes, never members.
+    assert _basenames(list(unit.dwi_files)) == [
+        'sub-01_dir-AP_part-mag_dwi.nii.gz',
+        'sub-01_dir-PA_part-mag_dwi.nii.gz',
+    ]
+    assert set(unit.dwi_phase_files) == set(unit.dwi_files)
+    for magnitude, phase in unit.dwi_phase_files.items():
+        assert op.basename(phase) == op.basename(magnitude).replace('part-mag', 'part-phase')
     scheme = concatenation_scheme(grouping, EDDY_TOPUP)
     assert scheme == {name: name for name in scheme}
 
     # The bval/bvec files carry no part- entity, so both parts inherit them.
-    for dwi_file in grouping.dwi_files:
+    for dwi_file in [*grouping.dwi_files, *unit.dwi_phase_files.values()]:
         bvals, bvecs = _load_gradients(dwi_file)
         assert bvals == [0.0, 1000.0, 0.0, 1000.0, 0.0, 1000.0]
         assert bvecs[1] == [1.0, 0.0, 0.0]

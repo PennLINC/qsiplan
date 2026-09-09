@@ -164,7 +164,11 @@ def build_dwi_grouping(
         As returned by :func:`qsiprep.utils.bids.collect_data`: must contain
         a ``'dwi'`` key listing the subject's DWI files (``'fmap'``,
         ``'t1w'``, and ``'t2w'`` are optional - they are discovered from the
-        layout when absent).
+        layout when absent). List every part of a complex-valued acquisition:
+        the grouping indexes the magnitude and carries its ``part-phase``
+        sibling as a companion (``FileRecord.phase_path``,
+        ``PreprocUnit.dwi_phase_files``), and ignores real/imaginary parts
+        with a warning. Pre-filtering ``part`` is neither needed nor wanted.
     separate_all_dwis : bool
         Every DWI series becomes its own output. Fieldmap estimation still
         happens at session scope, so single series keep their SDC.

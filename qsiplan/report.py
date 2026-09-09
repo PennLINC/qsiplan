@@ -79,6 +79,14 @@ def _shell_tag(record) -> str:
     return ''
 
 
+def _companion_lines(grouping: DWIGrouping, path: str, indent: str) -> list[str]:
+    """The phase companion of a complex-valued image, if it has one."""
+    record = grouping.files.get(path)
+    if record is None or not record.phase_path:
+        return []
+    return [f'{indent}with phase image {_basename(record.phase_path)}']
+
+
 def report_text(grouping: DWIGrouping) -> str:
     """The grouping decisions, with provenance, as printable text."""
     lines = []
@@ -97,6 +105,7 @@ def report_text(grouping: DWIGrouping) -> str:
             lines.append(f'  Distortion group {dgroup.key} ({dgroup.signature.describe()}):')
             for path in dgroup.dwi_files:
                 lines.append(f'    - {_basename(path)}{_shell_tag(grouping.files[path])}')
+                lines.extend(_companion_lines(grouping, path, indent='      '))
             if dgroup.b0field_source is None:
                 lines.append('    corrected by: nothing (no fieldmap found)')
             else:
@@ -129,6 +138,7 @@ def report_text(grouping: DWIGrouping) -> str:
             )
             for path in estimation.sources:
                 lines.append(f'    - {_basename(path)}')
+                lines.extend(_companion_lines(grouping, path, indent='      '))
             if estimation.pe_axes:
                 axes = ', '.join(
                     f'{axis} (bidirectional)'

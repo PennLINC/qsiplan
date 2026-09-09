@@ -92,6 +92,19 @@ ISSUE_CODES: dict[str, IssueSpec] = {
     'intendedfor-missing-target': _spec(
         'An IntendedFor entry names a file that does not exist in the dataset.', 'warning'
     ),
+    # ---- complex-valued (part-) acquisitions --------------------------------
+    'complex-part-unsupported': _spec(
+        'A part-real/part-imag (non-magnitude, non-phase) image was ignored.', 'warning'
+    ),
+    'phase-without-magnitude': _spec(
+        'A part-phase image has no magnitude sibling to accompany, so it was ignored.',
+        'warning',
+    ),
+    'complex-parts-disagree': _spec(
+        'The magnitude and phase sidecars of a complex pair disagree on a linkage field '
+        "(B0FieldSource/MultipartID); the magnitude's value is used.",
+        'warning',
+    ),
     # ---- curated fieldmap linkage (E1) --------------------------------------
     'reserved-b0field-prefix': _spec(
         "A curated B0FieldIdentifier uses the reserved 'auto+' prefix.", 'error'

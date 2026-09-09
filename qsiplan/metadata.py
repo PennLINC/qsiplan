@@ -228,12 +228,15 @@ def resolve_intended_for(
     subject_id: str,
     known_dwi_files: set[str],
     issues: list[GroupingIssue],
+    companion_primary: dict[str, str] | None = None,
 ) -> tuple[str, ...]:
     """Resolve IntendedFor entries to absolute paths of this subject's DWIs.
 
     Entries that resolve to non-DWI targets (e.g. BOLD runs) are legitimate
     uses of a shared fieldmap and are skipped silently. Entries that resolve
     to nothing on disk produce a warning - they are usually curation typos.
+    An entry naming the phase image of a complex-valued acquisition means its
+    magnitude (``companion_primary`` maps phase path -> magnitude path).
     """
     resolved = []
     for entry in entries:
@@ -255,8 +258,13 @@ def resolve_intended_for(
             candidate = op.join(bids_root, f'sub-{subject_id}', entry)
 
         candidate = op.abspath(candidate)
+        if companion_primary:
+            # A phase image names the same acquisition as its magnitude.
+            candidate = companion_primary.get(candidate, candidate)
         if candidate in known_dwi_files:
-            resolved.append(candidate)
+            # Both parts of a complex pair name one magnitude: list it once.
+            if candidate not in resolved:
+                resolved.append(candidate)
         elif not op.exists(candidate):
             issues.append(
                 warning(
@@ -313,6 +321,49 @@ def _load_metadata(path, inheritance, issues, cache, invalid_sidecars):
     return metadata
 
 
+#: Sidecar fields that link an acquisition to its fieldmaps and outputs. Both
+#: parts of a complex-valued pair are one acquisition, so a link curated on
+#: either part applies to it. Membership-like fields are unioned; the
+#: single-valued ones follow the magnitude, with a warning on disagreement.
+_UNIONED_LINKAGE = ('IntendedFor', 'B0FieldIdentifier')
+_SINGLE_LINKAGE = ('B0FieldSource', 'MultipartID')
+
+
+def _adopt_companion_linkage(path, phase_path, metadata, inheritance, issues, cache, invalid):
+    """Fold the phase companion's fieldmap/output linkage into the magnitude's.
+
+    A fieldmap cannot be intended for only one part of a complex pair, so
+    linkage curated on the phase sidecar alone counts for the acquisition.
+    ``IntendedFor``/``B0FieldIdentifier`` entries from both parts are
+    combined (a converter that links mag-to-mag and phase-to-phase names one
+    acquisition twice, not two acquisitions), while ``B0FieldSource`` and
+    ``MultipartID`` are single choices: the magnitude's wins, and a
+    disagreement is reported.
+    """
+    phase_metadata = _load_metadata(phase_path, inheritance, issues, cache, invalid)
+    merged = dict(metadata)
+    for key in _UNIONED_LINKAGE:
+        if key in phase_metadata:
+            own = _normalize_to_tuple(merged.get(key))
+            merged[key] = list(dict.fromkeys((*own, *_normalize_to_tuple(phase_metadata[key]))))
+    for key in _SINGLE_LINKAGE:
+        if key not in phase_metadata:
+            continue
+        if key not in merged:
+            merged[key] = phase_metadata[key]
+        elif _normalize_to_tuple(merged[key]) != _normalize_to_tuple(phase_metadata[key]):
+            issues.append(
+                warning(
+                    'complex-parts-disagree',
+                    f'{op.basename(path)} and its phase image {op.basename(phase_path)} '
+                    f'disagree on {key} ({merged[key]!r} vs {phase_metadata[key]!r}). '
+                    "Both parts are one acquisition; the magnitude's value is used.",
+                    (path, phase_path),
+                )
+            )
+    return merged
+
+
 def _record_from_file(
     path: str,
     inheritance,
@@ -323,9 +374,16 @@ def _record_from_file(
     metadata_cache,
     invalid_sidecars,
     b0_threshold: float | None = None,
+    companion_of: dict[str, str] | None = None,
+    primary_of: dict[str, str] | None = None,
 ) -> FileRecord:
     path = op.abspath(path)
     metadata = _load_metadata(path, inheritance, issues, metadata_cache, invalid_sidecars)
+    phase_path = (companion_of or {}).get(path)
+    if phase_path is not None:
+        metadata = _adopt_companion_linkage(
+            path, phase_path, metadata, inheritance, issues, metadata_cache, invalid_sidecars
+        )
     entities = parse_file_entities(path)
     datatype = entities.get('datatype') or ('dwi' if path in known_dwi_files else 'fmap')
 
@@ -338,6 +396,7 @@ def _record_from_file(
             subject_id=subject_id,
             known_dwi_files=known_dwi_files,
             issues=issues,
+            companion_primary=primary_of,
         )
 
     shelled, shells, max_bval, grid = (None, (), None, None)
@@ -374,6 +433,8 @@ def _record_from_file(
         grid=grid,
         bval_file=bval_file,
         bvec_file=bvec_file,
+        part=entities.get('part'),
+        phase_path=(companion_of or {}).get(path),
     )
 
 
@@ -392,6 +453,62 @@ def _collect_datatype_files(layout, subject_data, subject_id, key, datatype, suf
     return [path for path in files if parse_file_entities(path).get('suffix') in suffixes]
 
 
+def _split_parts(paths, issues: list[GroupingIssue]) -> tuple[list[str], dict[str, str]]:
+    """Split complex-valued acquisitions into primaries and phase companions.
+
+    Files that differ only in their BIDS ``part-`` entity are one acquisition.
+    The magnitude (``part-mag``, or no ``part`` at all) is the **primary**: the
+    one file the grouping indexes. A ``part-phase`` sibling is its
+    **companion**, carried on the primary's record and never indexed itself, so
+    no grouping tier can ever count it as a series. Real/imaginary (or any
+    other) parts are not consumed and are dropped with a warning, as is a
+    phase image with no magnitude to accompany.
+
+    Returns ``(primaries, companion_of)``: the primaries in input order, and
+    ``{primary: phase_path}`` for the primaries that have a companion.
+    """
+    # (entities minus part) -> {part label: path}
+    acquisitions: dict[tuple, dict[str | None, str]] = {}
+    for path in paths:
+        entities = parse_file_entities(path)
+        key = tuple(sorted((k, v) for k, v in entities.items() if k not in ('part', 'extension')))
+        acquisitions.setdefault(key, {})[entities.get('part')] = path
+
+    keep: set[str] = set()
+    companion_of: dict[str, str] = {}
+    for members in acquisitions.values():
+        # ``part-mag`` and a part-less image are both magnitudes; a phase
+        # companion attaches to the explicitly labelled one when both exist.
+        primaries = [members[part] for part in (None, 'mag') if part in members]
+        keep.update(primaries)
+        phase = members.get('phase')
+        if phase is not None:
+            if primaries:
+                companion_of[primaries[-1]] = phase
+            else:
+                issues.append(
+                    warning(
+                        'phase-without-magnitude',
+                        f'{op.basename(phase)} is a phase image with no magnitude '
+                        '(part-mag) sibling to accompany, so it is ignored.',
+                        (phase,),
+                    )
+                )
+        for part, path in members.items():
+            if part in (None, 'mag', 'phase'):
+                continue
+            issues.append(
+                warning(
+                    'complex-part-unsupported',
+                    f'{op.basename(path)} is a part-{part} image of a complex-valued '
+                    'acquisition. QSIPrep uses the magnitude (and its phase) only, '
+                    'so it is ignored.',
+                    (path,),
+                )
+            )
+    return [path for path in paths if path in keep], companion_of
+
+
 def index_subject(
     layout,
     subject_data: dict,
@@ -405,6 +522,11 @@ def index_subject(
     that can drive fieldmap-less correction (T1w for SyNb0, T2w for T2Wreg).
     Whether anatomical processing actually runs (``--anat-modality none``) is
     a workflow concern applied downstream, not here.
+
+    A complex-valued acquisition (``part-mag`` + ``part-phase``) is indexed
+    once, as its magnitude; the phase image is carried on that record's
+    ``phase_path`` and never becomes a series of its own. Real/imaginary
+    parts, and a phase with no magnitude, are ignored with a warning.
 
     Parameters
     ----------
@@ -427,6 +549,11 @@ def index_subject(
     dwi_files = [op.abspath(path) for path in subject_data.get('dwi', [])]
     if not dwi_files:
         raise ValueError('subject_data contains no DWI files to group.')
+    # Complex-valued data: only magnitudes are indexed; a phase image rides on
+    # its magnitude's record as a companion (see ``_split_parts``).
+    dwi_files, companion_of = _split_parts(dwi_files, issues)
+    if not dwi_files:
+        raise ValueError('subject_data contains no magnitude DWI files to group.')
 
     known_dwi_files = set(dwi_files)
     bids_root = str(layout.root)
@@ -437,6 +564,10 @@ def index_subject(
         fmap_files = _collect_datatype_files(
             layout, subject_data, subject_id, 'fmap', 'fmap', FMAP_SUFFIXES
         )
+        # A complex-valued epi fieldmap splits the same way, so a phase epi can
+        # never enter a PEPOLAR estimation's sources.
+        fmap_files, fmap_companions = _split_parts(fmap_files, issues)
+        companion_of = {**companion_of, **fmap_companions}
 
     t2w_files = (
         []
@@ -449,6 +580,7 @@ def index_subject(
     )
 
     all_files = sorted(known_dwi_files) + sorted(fmap_files) + anat_files
+    primary_of = {phase: primary for primary, phase in companion_of.items()}
     inheritance = BIDSInheritanceIndex(all_files, root=bids_root)
     metadata_cache = {}
     invalid_sidecars = set()
@@ -463,6 +595,8 @@ def index_subject(
             metadata_cache,
             invalid_sidecars,
             b0_threshold=b0_threshold,
+            companion_of=companion_of,
+            primary_of=primary_of,
         )
         for path in all_files
     ]

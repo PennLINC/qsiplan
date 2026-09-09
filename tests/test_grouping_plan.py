@@ -277,7 +277,7 @@ def test_decomposed_pairs_get_their_own_runs(tmp_path):
 def test_plan_serialization_shape(tmp_path):
     plan = _plan_for(tmp_path, 'hcp_style', 'eddy', 'topup+drbuddi')
     payload = plan.to_dict()
-    assert payload['schema_version'] == 1
+    assert payload['schema_version'] == 2  # 2: runs carry dwi_phase_files
     assert payload['selection']['hmc'] == 'eddy'
     assert payload['selection']['pepolar_tools'] == ['topup', 'drbuddi']
     assert payload['selection']['label'] == 'eddy + TOPUP→DRBUDDI'
