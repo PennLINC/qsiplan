@@ -83,6 +83,33 @@ def test_phase_is_a_companion_not_a_series(tmp_path):
     assert not [name for name in unit_to_sidecar(unit)['Sources'] if 'part-phase' in str(name)]
 
 
+def test_separate_all_dwis_keeps_phase_a_companion(tmp_path):
+    """``--separate-all-dwis`` splits the magnitudes into their own units and
+    never promotes a phase image to a series or a phantom separate output."""
+    grouping = load_scenario('nibs_style', tmp_path, strict=False, separate_all_dwis=True)
+
+    # Only magnitudes are indexed, exactly as without the flag.
+    assert _names(grouping.dwi_files) == [
+        'sub-01_dir-AP_part-mag_dwi.nii.gz',
+        'sub-01_dir-PA_part-mag_dwi.nii.gz',
+    ]
+    assert not [path for path in grouping.files if 'part-phase' in path]
+
+    # Every magnitude is forced into its own unit; its phase rides along as a
+    # companion, never a member series or a separate output.
+    units = to_preproc_units(grouping, TORTOISE_DRBUDDI)
+    assert len(units) == len(grouping.dwi_files)
+    for unit in units:
+        (magnitude,) = unit.dwi_files
+        assert unit.dwi_phase_files == {magnitude: grouping.files[magnitude].phase_path}
+        assert op.basename(unit.dwi_phase_files[magnitude]) == _phase_name(magnitude)
+        assert 'part-' not in unit.output_name
+        assert not [path for path in unit.sidecar_overrides() if 'part-phase' in path]
+    # The phase never leaks into a series list to double the volume count.
+    assert sorted(path for unit in units for path in unit.dwi_files) == sorted(grouping.dwi_files)
+    assert check_model_integrity(grouping) == []
+
+
 def test_magnitude_only_units_carry_no_phase_entries(tmp_path):
     (unit,) = to_preproc_units(load_scenario('abcd_style', tmp_path, strict=False), EDDY_TOPUP)
     assert unit.dwi_phase_files == {}

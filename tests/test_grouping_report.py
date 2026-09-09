@@ -94,6 +94,7 @@ GOLDEN_CASES = [
 #: Flag variants with no golden file: invariant coverage only.
 FLAG_VARIANTS = [
     ('hcp_style', {'separate_all_dwis': True}),
+    ('complex_pepolar', {'separate_all_dwis': True}),
     ('reshim', {'ignore_shims': True}),
     ('abcd_style', {'ignore_fieldmaps': True}),
     ('t2w_hcp', {'sdc_anat_reference': 't2w', 'force_sdc_anat_reference': True}),
