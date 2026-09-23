@@ -1,0 +1,30 @@
+# An AP/PA pair of DWI series plus a phasediff whose IntendedFor names both,
+# as dataset converters write it. Expected: the GRE IntendedFor does not stop
+# reverse phase-encoding inference, so the inferred PEPOLAR pairing corrects
+# both series and the GRE fieldmap stays a candidate that initializes DRBUDDI.
+'01':
+  - anat:
+      - suffix: T1w
+    fmap:
+      - suffix: phasediff
+        metadata:
+          EchoTime1: 0.00492
+          EchoTime2: 0.00738
+          IntendedFor: ['dwi/sub-01_dir-AP_dwi.nii.gz', 'dwi/sub-01_dir-PA_dwi.nii.gz']
+      - suffix: magnitude1
+        metadata:
+          EchoTime: 0.00492
+      - suffix: magnitude2
+        metadata:
+          EchoTime: 0.00738
+    dwi:
+      - dir: AP
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: PA
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05

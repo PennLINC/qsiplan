@@ -69,6 +69,12 @@ class CorrectionMethod(enum.StrEnum):
     NIPREPS_SYN = 'syn'  # fieldmap-less: ANTs SyN registration to a template (classic)
 
 
+#: The GRE fieldmap methods: a measured field in Hz, with its magnitude image.
+GRE_METHODS = frozenset(
+    {CorrectionMethod.DIRECT, CorrectionMethod.PHASEDIFF, CorrectionMethod.PHASES}
+)
+
+
 @dataclasses.dataclass(frozen=True)
 class AnatReference:
     """One anatomical-derived source image ``--sdc-anat-reference`` can select.
@@ -369,6 +375,10 @@ class FieldmapEstimation:
     def is_pepolar(self) -> bool:
         return self.method is CorrectionMethod.PEPOLAR
 
+    @property
+    def is_gre(self) -> bool:
+        return self.method in GRE_METHODS
+
 
 @dataclasses.dataclass(frozen=True)
 class DistortionGroup:
@@ -575,6 +585,15 @@ class DWIGrouping:
     @property
     def warnings(self) -> list:
         return [issue for issue in self.issues if issue.severity == 'warning']
+
+    def initializes_only(self, b0field_id: str) -> bool:
+        """True for a GRE estimation that lists DWI series but corrects none: it
+        can only start another correction's registration (DRBUDDI or T2Wreg)."""
+        return (
+            self.estimations[b0field_id].is_gre
+            and b0field_id not in set(self.application.values())
+            and any(b0field_id in ids for ids in self.application_candidates.values())
+        )
 
     def distortion_groups_in(self, concat_key: str) -> list[DistortionGroup]:
         """The member distortion groups of a concatenation group (by its key)."""

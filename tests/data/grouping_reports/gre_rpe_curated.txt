@@ -1,0 +1,67 @@
+DWI grouping for sub-01
+=======================
+
+Output "sub-01" (MultipartID auto+concat+0 [inferred]): 2 series
+  Distortion group sub-01_dir-AP (PE j-, TRT 0.05s):
+    - sub-01_dir-AP_dwi.nii.gz
+    corrected by: gre [curated]
+  Distortion group sub-01_dir-PA (PE j, TRT 0.05s):
+    - sub-01_dir-PA_dwi.nii.gz
+    corrected by: gre [curated]
+
+Fieldmap estimations:
+  gre [curated]: GRE phase difference
+    - sub-01_magnitude1.nii.gz
+    - sub-01_magnitude2.nii.gz
+    - sub-01_phasediff.nii.gz
+
+Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
+-----------------------------------------------------------------------
+
+Output "sub-01" (2 series):
+  1. Each series is denoised on its own. The 2 series run in 2 pipelines: a correction built as one warp for one phase encoding runs once per encoding.
+  2. Phase encoding 'sub-01_dir-AP' (sub-01_dir-AP_dwi.nii.gz):
+  3. A fieldmap is computed from the GRE phase difference acquisition (sub-01_magnitude1.nii.gz, sub-01_magnitude2.nii.gz, sub-01_phasediff.nii.gz).
+  4. eddy corrects head motion and eddy currents; the fieldmap is applied to unwarp the results.
+  5. Phase encoding 'sub-01_dir-PA' (sub-01_dir-PA_dwi.nii.gz):
+  6. A fieldmap is computed from the GRE phase difference acquisition (sub-01_magnitude1.nii.gz, sub-01_magnitude2.nii.gz, sub-01_phasediff.nii.gz).
+  7. eddy corrects head motion and eddy currents; the fieldmap is applied to unwarp the results.
+  8. The corrected results of the 2 pipelines are resampled onto one grid and concatenated into one output file.
+
+Processing preview: TORTOISE + DRBUDDI (--hmc-method tortoise --sdc-method drbuddi)
+-----------------------------------------------------------------------------------
+
+Output "sub-01" (2 series):
+  1. Each series is denoised on its own. The 2 series run in 2 pipelines: a correction built as one warp for one phase encoding runs once per encoding.
+  2. Phase encoding 'sub-01_dir-AP' (sub-01_dir-AP_dwi.nii.gz):
+  3. TORTOISE DIFFPREP corrects head motion and eddy currents.
+  4. A fieldmap is computed from the GRE phase difference acquisition and applied to unwarp the DIFFPREP output.
+  5. Phase encoding 'sub-01_dir-PA' (sub-01_dir-PA_dwi.nii.gz):
+  6. TORTOISE DIFFPREP corrects head motion and eddy currents.
+  7. A fieldmap is computed from the GRE phase difference acquisition and applied to unwarp the DIFFPREP output.
+  8. The corrected results of the 2 pipelines are resampled onto one grid and concatenated into one output file.
+
+Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup+drbuddi)
+---------------------------------------------------------------------------------------
+
+Output "sub-01" (2 series):
+  1. Each series is denoised on its own. The 2 series run in 2 pipelines: a correction built as one warp for one phase encoding runs once per encoding.
+  2. Phase encoding 'sub-01_dir-AP' (sub-01_dir-AP_dwi.nii.gz):
+  3. Without a PEPOLAR fieldmap the DRBUDDI second stage adds nothing: processing follows the FSL path (fieldmap-based correction).
+  4. Phase encoding 'sub-01_dir-PA' (sub-01_dir-PA_dwi.nii.gz):
+  5. Without a PEPOLAR fieldmap the DRBUDDI second stage adds nothing: processing follows the FSL path (fieldmap-based correction).
+  6. The corrected results of the 2 pipelines are resampled onto one grid and concatenated into one output file.
+  !! WARNING [mixed-non-pepolar]: Estimation 'gre' is not PEPOLAR; the DRBUDDI second stage only refines PEPOLAR corrections, so 'sub-01' will get single-stage correction.
+
+Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
+-------------------------------------------------------------------------------------
+
+Output "sub-01" (2 series):
+  1. Each series is denoised on its own. The 2 series run in 2 pipelines: a correction built as one warp for one phase encoding runs once per encoding.
+  2. Phase encoding 'sub-01_dir-AP' (sub-01_dir-AP_dwi.nii.gz):
+  3. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
+  4. A fieldmap is computed from the GRE phase difference acquisition and applied to unwarp the corrected series.
+  5. Phase encoding 'sub-01_dir-PA' (sub-01_dir-PA_dwi.nii.gz):
+  6. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
+  7. A fieldmap is computed from the GRE phase difference acquisition and applied to unwarp the corrected series.
+  8. The corrected results of the 2 pipelines are resampled onto one grid and concatenated into one output file.

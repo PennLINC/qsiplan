@@ -560,7 +560,12 @@ def _estimation_cards(
     for eid, estimation in sorted(grouping.estimations.items()):
         fill, stroke = _PROVENANCE_COLORS[_prov_value(estimation.provenance)]
         title, explain = _METHOD_EXPLANATIONS[estimation.method]
-        unused = '' if eid in applied else ' <span class="unused">(not used)</span>'
+        if eid in applied:
+            unused = ''
+        elif grouping.initializes_only(eid):
+            unused = ' <span class="unused">(initializes DRBUDDI/T2Wreg)</span>'
+        else:
+            unused = ' <span class="unused">(not used)</span>'
         parts.append(
             f'<div class="est" data-est="{_esc(eid)}" style="border-color:{stroke}">'
             f'<div class="est-head" style="background:{fill}">'

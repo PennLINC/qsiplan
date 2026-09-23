@@ -64,6 +64,8 @@ GOLDEN_CASES = [
     ('hcp_style', {}, 'hcp_style'),
     ('abcd_style', {}, 'abcd_style'),
     ('two_gre_fmaps', {}, 'two_gre_fmaps'),
+    ('gre_rpe_intendedfor', {}, 'gre_rpe_intendedfor'),
+    ('gre_rpe_curated', {}, 'gre_rpe_curated'),
     ('fieldmapless_t2w', {}, 'fieldmapless_t2w'),
     ('fieldmapless_t2w_only', {'sdc_anat_reference': 'auto'}, 'fieldmapless_t2w_auto'),
     ('fieldmapless_t1w_only', {'sdc_anat_reference': 'invt1w'}, 'fieldmapless_t1w_only_syn'),

@@ -337,17 +337,20 @@ def resolve_estimations(
         targets[b0field_id] = set(cluster_targets)
 
     # ------------------------------------------------------------------ E3
-    # The reverse phase-encoding heuristic runs only in sessions with NO
-    # curated fieldmap linkage at all. In an uncurated dataset, absent
-    # metadata means "nobody looked" and guessing is a service; once any
+    # The reverse phase-encoding heuristic runs only in sessions with no
+    # explicit fieldmap linkage. Where nothing is linked, absent metadata
+    # means "nobody looked" and guessing is a service; once any
     # series in the session is linked - by B0FieldIdentifier/B0FieldSource
-    # or by an IntendedFor naming it - absent metadata means "somebody
-    # looked and chose not to link these", so QSIPrep stops guessing.
-    # (Fieldmap-less correction still applies: unlike sidecar metadata, it
-    # is under the user's control at the command line.)
+    # or by an epi fieldmap's IntendedFor naming it - absent metadata means
+    # "somebody looked and chose not to link these", so QSIPrep stops
+    # guessing. A GRE fieldmap's IntendedFor is not such a link: it lists the
+    # series the fieldmap can correct, not a decision against pairing them,
+    # and an inferred pair outranks it while leaving it a candidate (see
+    # resolve_application). (Fieldmap-less correction still applies: unlike
+    # sidecar metadata, it is under the user's control at the command line.)
     intendedfor_covered = set()
     for b0field_id, estimation in estimations.items():
-        if estimation.provenance is Provenance.TRANSLATED:
+        if estimation.provenance is Provenance.TRANSLATED and not estimation.is_gre:
             intendedfor_covered.update(targets[b0field_id])
 
     #: Sessions where any file carries B0Field* metadata (a curated fmap or
@@ -559,7 +562,12 @@ def resolve_application(
                 ):
                     candidates.append((b0field_id, Provenance.TRANSLATED))
 
-        if not candidates:
+        # GRE IntendedFor links do not stop reverse phase-encoding inference
+        # (see E3), so an inferred pair competes with them.
+        if all(
+            provenance is Provenance.TRANSLATED and estimations[b0field_id].is_gre
+            for b0field_id, provenance in candidates
+        ):
             for b0field_id, estimation in estimations.items():
                 if (
                     estimation.provenance is Provenance.INFERRED
@@ -1195,11 +1203,17 @@ def build_grouping(
                 if b0field_id not in candidate_ids:
                     del estimations[b0field_id]
             else:
+                consequence = (
+                    'is not applied to any DWI series; it initializes DRBUDDI or T2Wreg '
+                    'where those correct a series it lists.'
+                    if estimation.is_gre and b0field_id in candidate_ids
+                    else 'does not correct any DWI series.'
+                )
                 issues.append(
                     warning(
                         'estimation-unused',
                         f"Fieldmap estimation '{b0field_id}' "
-                        f'{estimation.provenance.tag()} does not correct any DWI series.',
+                        f'{estimation.provenance.tag()} {consequence}',
                         estimation.sources,
                     )
                 )

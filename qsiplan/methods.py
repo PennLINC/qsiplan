@@ -90,6 +90,10 @@ class SdcCapabilities:
     needs_structural_target: bool
     #: Whether the tool can refine an already-corrected series (second stage).
     refinement_capable: bool
+    #: Whether its correction is one displacement field built for one phase
+    #: encoding and readout, applied after HMC - so series encoded differently
+    #: need a run each.
+    single_encoding: bool
 
 
 HMC_CAPABILITIES: dict[HmcMethod, HmcCapabilities] = {
@@ -134,6 +138,7 @@ SDC_CAPABILITIES: dict[SdcTool, SdcCapabilities] = {
         single_blip_pair_only=False,
         needs_structural_target=False,
         refinement_capable=False,
+        single_encoding=False,
     ),
     SdcTool.DRBUDDI: SdcCapabilities(
         label='DRBUDDI',
@@ -143,6 +148,7 @@ SDC_CAPABILITIES: dict[SdcTool, SdcCapabilities] = {
         single_blip_pair_only=True,
         needs_structural_target=False,
         refinement_capable=True,
+        single_encoding=False,
     ),
     SdcTool.FIELDMAP: SdcCapabilities(
         label='GRE fieldmap',
@@ -158,6 +164,7 @@ SDC_CAPABILITIES: dict[SdcTool, SdcCapabilities] = {
         single_blip_pair_only=False,
         needs_structural_target=False,
         refinement_capable=False,
+        single_encoding=True,
     ),
     SdcTool.T2WREG: SdcCapabilities(
         label='T2Wreg',
@@ -167,6 +174,7 @@ SDC_CAPABILITIES: dict[SdcTool, SdcCapabilities] = {
         single_blip_pair_only=False,
         needs_structural_target=True,
         refinement_capable=True,
+        single_encoding=True,
     ),
     SdcTool.SYN: SdcCapabilities(
         label='SyN',
@@ -176,6 +184,7 @@ SDC_CAPABILITIES: dict[SdcTool, SdcCapabilities] = {
         single_blip_pair_only=False,
         needs_structural_target=True,
         refinement_capable=False,
+        single_encoding=True,
     ),
 }
 

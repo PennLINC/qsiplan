@@ -361,6 +361,37 @@ def _decompose_unit(
     return subunits
 
 
+def _encoding_key(grouping: DWIGrouping, path: str) -> tuple:
+    """The phase encoding (direction and polarity) and readout time of a file."""
+    sig = grouping.files[path].signature
+    return (sig.pe_dir, sig.readout_time)
+
+
+def _split_by_encoding(
+    grouping: DWIGrouping, unit, estimation: FieldmapEstimation | None
+) -> list[PreprocUnit]:
+    """One PreprocUnit per phase encoding and readout of ``unit``, each under
+    the unit's estimation. Names come from each part's files, disambiguated by
+    an ``acq-enc<N>`` label only where two parts would share one."""
+    by_encoding: dict[tuple, list[str]] = defaultdict(list)
+    for path in unit.dwi_files:
+        by_encoding[_encoding_key(grouping, path)].append(path)
+    subunits = []
+    used = set()
+    for index, key in enumerate(sorted(by_encoding, key=str), start=1):
+        files = tuple(sorted(by_encoding[key]))
+        name = derive_output_name(list(files))
+        if name in used:
+            name = derive_output_name(list(files), acq=f'enc{index}')
+        used.add(name)
+        subunits.append(
+            PreprocUnit(
+                grouping=grouping, output_name=name, dwi_files=files, estimation=estimation
+            )
+        )
+    return sorted(subunits, key=lambda subunit: subunit.output_name)
+
+
 def plan_preproc_units(grouping: DWIGrouping, plan) -> list[PreprocUnit]:
     """One :class:`PreprocUnit` per :class:`~.plan.ProcessingRun`, carrying it."""
     return [
