@@ -111,6 +111,34 @@ class PreprocUnit:
         return self.is_pepolar or self.is_gre
 
     @property
+    def gre_init_estimation(self) -> FieldmapEstimation | None:
+        """A GRE fieldmap that is a *candidate* for these DWI but is not the
+        applied correction - usable to initialize the applied correction.
+
+        When a reverse-PE series also has a GRE (phasediff / two-phase / direct)
+        fieldmap, the grouping applies one method (PEPOLAR -> DRBUDDI) and keeps
+        the other in ``application_candidates``. This returns that GRE candidate
+        (lowest ``b0field_id`` when several), so DRBUDDI can be seeded with a
+        GRE-derived warp the way T2Wreg already is. ``None`` when the applied
+        correction is itself GRE (already the estimation) or no GRE candidate
+        exists.
+        """
+        if self.estimation is None or self.is_gre:
+            return None
+        applied = self.estimation.b0field_id
+        candidates = {
+            cand_id: self.grouping.estimations[cand_id]
+            for path in self.dwi_files
+            for cand_id in self.grouping.application_candidates.get(path, ())
+            if cand_id != applied
+            and cand_id in self.grouping.estimations
+            and self.grouping.estimations[cand_id].method in _GRE_SUFFIX
+        }
+        if not candidates:
+            return None
+        return candidates[min(candidates)]
+
+    @property
     def dwi_metadata(self) -> dict:
         """Sidecar metadata of the lead DWI series (already read into the model)."""
         return dict(self.dwi_records[0].metadata)
