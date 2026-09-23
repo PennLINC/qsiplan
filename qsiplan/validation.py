@@ -161,7 +161,9 @@ ISSUE_CODES: dict[str, IssueSpec] = {
         'warning',
     ),
     'estimation-unused': _spec(
-        'A curated or translated estimation corrects no DWI series.', 'warning'
+        'A curated or translated estimation corrects no DWI series (a GRE fieldmap may '
+        'still initialize DRBUDDI or T2Wreg).',
+        'warning',
     ),
     'cross-session-fieldmap-application': _spec(
         'One estimation corrects DWI series in several sessions (honored, but sessions reshim).',

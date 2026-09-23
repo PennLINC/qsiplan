@@ -914,6 +914,32 @@ def test_syn_missing_pedir(tmp_path):
     assert 'auto+syn' in grouping.estimations
 
 
+def test_gre_intendedfor_does_not_stop_reverse_pe_inference(tmp_path):
+    """A GRE fieldmap's IntendedFor lets the series still pair up: the inferred
+    reverse phase-encoding pairing outranks the GRE fieldmap, which stays a
+    candidate that only initializes a registration."""
+    grouping = load_scenario('gre_rpe_intendedfor', tmp_path, strict=False)
+
+    assert set(grouping.estimations) == {'auto+fmap+sub-01', 'auto+pepolar+j'}
+    assert set(grouping.application.values()) == {'auto+pepolar+j'}
+    assert set(grouping.application_candidates.values()) == {
+        ('auto+pepolar+j', 'auto+fmap+sub-01')
+    }
+    assert grouping.initializes_only('auto+fmap+sub-01')
+    (unused,) = [issue for issue in grouping.warnings if issue.code == 'estimation-unused']
+    assert 'initializes DRBUDDI or T2Wreg' in unused.message
+
+
+def test_curated_gre_on_a_reverse_pe_pair_is_not_second_guessed(tmp_path):
+    """Curation still stops the reverse phase-encoding heuristic: a GRE fieldmap
+    curated onto both series corrects both."""
+    grouping = load_scenario('gre_rpe_curated', tmp_path, strict=False)
+
+    assert set(grouping.estimations) == {'gre'}
+    assert set(grouping.application.values()) == {'gre'}
+    assert not grouping.initializes_only('gre')
+
+
 def test_t2w_hcp_pepolar_wins(tmp_path):
     """A real PEPOLAR pair always beats the fieldmap-less fallback."""
     grouping = load_scenario('t2w_hcp', tmp_path)

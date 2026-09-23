@@ -46,6 +46,8 @@ SCENARIOS = [
     'fov_oblique',
     'fov_shift',
     'gre_phasediff',
+    'gre_rpe_curated',
+    'gre_rpe_intendedfor',
     'hcp_style',
     'intendedfor_superseded',
     'maxb_mismatch',

@@ -131,7 +131,12 @@ def report_text(grouping: DWIGrouping) -> str:
         applied_ids = {b0field_id for b0field_id in grouping.application.values() if b0field_id}
         lines.append('Fieldmap estimations:')
         for b0field_id, estimation in sorted(grouping.estimations.items()):
-            unused = '' if b0field_id in applied_ids else ' (not used)'
+            if b0field_id in applied_ids:
+                unused = ''
+            elif grouping.initializes_only(b0field_id):
+                unused = ' (initializes DRBUDDI/T2Wreg)'
+            else:
+                unused = ' (not used)'
             lines.append(
                 f'  {b0field_id} {estimation.provenance.tag()}: '
                 f'{_METHOD_LABELS[estimation.method]}{unused}'
@@ -200,14 +205,43 @@ def _describe_unit(lines, grouping, selection, multipart_id, unit, step) -> int:
     return _describe_eddy(lines, grouping, multipart_id, corrected, dgroups, step)
 
 
+def _pipelines(grouping, selection, unit) -> list:
+    """``unit``, or one view of it per phase encoding when its correction is one
+    warp built for one encoding (the per-encoding runs of the compiled plan)."""
+    from .adapters import PreprocUnit, _split_by_encoding
+    from .plan import _mixes_encodings_under_one_warp
+
+    estimation = grouping.estimations[unit.b0field_source] if unit.b0field_source else None
+    whole = PreprocUnit(
+        grouping=grouping, output_name=unit.key, dwi_files=unit.dwi_files, estimation=estimation
+    )
+    if not _mixes_encodings_under_one_warp(grouping, whole, selection):
+        return [unit]
+    return [
+        dataclasses.replace(
+            unit,
+            key=part.output_name,
+            dwi_files=part.dwi_files,
+            distortion_groups=tuple(
+                key
+                for key in unit.distortion_groups
+                if set(grouping.distortion_groups[key].dwi_files) <= set(part.dwi_files)
+            ),
+        )
+        for part in _split_by_encoding(grouping, unit, estimation)
+    ]
+
+
 def _output_step_lines(grouping, selection, multipart_id, backend_issues) -> list[str]:
     """The numbered step lines for one output, as printed by describe_processing."""
     concat = grouping.concatenation_groups[multipart_id]
     units = grouping.correction_units_in(multipart_id)
+    pipelines = [part for unit in units for part in _pipelines(grouping, selection, unit)]
+    split = len(pipelines) > len(units)
     n_series = len(concat.dwi_files)
     lines = []
 
-    if len(units) == 1:
+    if len(pipelines) == 1:
         if n_series > 1:
             lines.append(
                 '  1. Each series is denoised on its own, then all '
@@ -216,8 +250,24 @@ def _output_step_lines(grouping, selection, multipart_id, backend_issues) -> lis
             )
         else:
             lines.append('  1. The series is denoised.')
-        step = _describe_unit(lines, grouping, selection, multipart_id, units[0], step=2)
+        step = _describe_unit(lines, grouping, selection, multipart_id, pipelines[0], step=2)
         lines.append(f'  {step}. The corrected series is written as one output file.')
+    elif split:
+        lines.append(
+            f'  1. Each series is denoised on its own. The {n_series} series run in '
+            f'{len(pipelines)} pipelines: a correction built as one warp for one phase '
+            'encoding runs once per encoding.'
+        )
+        step = 2
+        for pipeline in pipelines:
+            names = ', '.join(_basename(path) for path in pipeline.dwi_files)
+            kind = 'Correction unit' if pipeline in units else 'Phase encoding'
+            lines.append(f"  {step}. {kind} '{pipeline.key}' ({names}):")
+            step = _describe_unit(lines, grouping, selection, multipart_id, pipeline, step + 1)
+        lines.append(
+            f'  {step}. The corrected results of the {len(pipelines)} pipelines are '
+            'resampled onto one grid and concatenated into one output file.'
+        )
     else:
         lines.append(
             f'  1. Each series is denoised on its own. The {n_series} series span '

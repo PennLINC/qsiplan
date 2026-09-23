@@ -25,8 +25,14 @@ import dataclasses
 import enum
 import os.path as op
 
-from .adapters import PreprocUnit, _decompose_unit, _decomposes_pepolar_pairs
-from .methods import HMC_CAPABILITIES, HmcMethod, MethodSelection, SdcTool
+from .adapters import (
+    PreprocUnit,
+    _decompose_unit,
+    _decomposes_pepolar_pairs,
+    _encoding_key,
+    _split_by_encoding,
+)
+from .methods import HMC_CAPABILITIES, SDC_CAPABILITIES, HmcMethod, MethodSelection, SdcTool
 from .models import (
     ANAT_REFERENCES,
     CorrectionMethod,
@@ -591,6 +597,21 @@ def _check_shelling(grouping, selection, multipart_id, concat) -> list[GroupingI
     return issues
 
 
+def _mixes_encodings_under_one_warp(grouping: DWIGrouping, unit, selection) -> bool:
+    """True when ``unit``'s series are encoded more than one way but its
+    correction is one warp for one encoding, applied after HMC
+    (:attr:`~.methods.SdcCapabilities.single_encoding`): each encoding then
+    needs its own run and warp."""
+    if len({_encoding_key(grouping, path) for path in unit.dwi_files}) < 2:
+        return False
+    return any(
+        stage.role is StageRole.ESTIMATE_AND_APPLY
+        and stage.tool in SDC_CAPABILITIES
+        and SDC_CAPABILITIES[stage.tool].single_encoding
+        for stage in _stages_for_unit(grouping, selection, unit)
+    )
+
+
 def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> ExecutionPlan:
     """Compile the execution plan for ``selection`` over a finished grouping.
 
@@ -610,17 +631,18 @@ def compile_plan(grouping: DWIGrouping, selection: MethodSelection) -> Execution
         concat = concat_of_unit.get(unit.key)
         output_group = concat.key if concat is not None else unit.key
 
+        whole = PreprocUnit(
+            grouping=grouping,
+            output_name=unit.key,
+            dwi_files=unit.dwi_files,
+            estimation=estimation,
+        )
         if _decomposes_pepolar_pairs(grouping, unit, estimation, selection):
             subunits = _decompose_unit(grouping, unit, estimation)
+        elif _mixes_encodings_under_one_warp(grouping, whole, selection):
+            subunits = _split_by_encoding(grouping, unit, estimation)
         else:
-            subunits = [
-                PreprocUnit(
-                    grouping=grouping,
-                    output_name=unit.key,
-                    dwi_files=unit.dwi_files,
-                    estimation=estimation,
-                )
-            ]
+            subunits = [whole]
         for subunit in subunits:
             runs.append(
                 ProcessingRun(

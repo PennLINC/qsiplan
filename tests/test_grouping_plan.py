@@ -25,6 +25,7 @@ CASES = [(scenario, {}) for scenario in SCENARIOS] + [
     ('fieldmapless_t1w_only', {'sdc_anat_reference': 'synb0'}),
     ('t2w_hcp', {'sdc_anat_reference': 'synb0', 'force_sdc_anat_reference': True}),
     ('curated_t2wreg', {'sdc_anat_reference': 't2w', 'force_sdc_anat_reference': True}),
+    ('t2w_hcp', {'sdc_anat_reference': 'invt1w', 'force_sdc_anat_reference': True}),
 ]
 
 #: The eddy/TORTOISE preview selections every case is compiled under.
@@ -274,6 +275,45 @@ def test_decomposed_pairs_get_their_own_runs(tmp_path):
             assert set(drbuddi.fieldmap_sources) == set(run.estimation.sources)
 
 
+@pytest.mark.parametrize(
+    ('hmc', 'sdc'), [('eddy', 'topup'), ('shoreline', 'drbuddi'), ('tortoise', 'drbuddi')]
+)
+def test_gre_unit_with_two_encodings_runs_once_per_encoding(tmp_path, hmc, sdc):
+    """A GRE warp is built for one phase encoding, so a GRE unit whose series
+    are encoded differently runs once per encoding, merged into one output."""
+    plan = _plan_for(tmp_path, 'gre_rpe_curated', hmc, sdc)
+
+    assert sorted(run.key for run in plan.runs) == ['sub-01_dir-AP', 'sub-01_dir-PA']
+    assert {run.logical_unit for run in plan.runs} == {'sub-01'}
+    for run in plan.runs:
+        assert len(run.dwi_files) == 1
+        assert run.estimation.b0field_id == 'gre'
+        assert run.stage_with('fieldmap').role is StageRole.ESTIMATE_AND_APPLY
+    (assembly,) = plan.outputs
+    assert sorted(assembly.input_runs) == ['sub-01_dir-AP', 'sub-01_dir-PA']
+
+
+@pytest.mark.parametrize(
+    ('hmc', 'sdc'), [('eddy', 'topup'), ('shoreline', 'drbuddi'), ('tortoise', 'drbuddi')]
+)
+def test_forced_syn_over_a_reverse_pe_pair_runs_once_per_encoding(tmp_path, hmc, sdc):
+    plan = _plan_for(
+        tmp_path, 't2w_hcp', hmc, sdc, sdc_anat_reference='invt1w', force_sdc_anat_reference=True
+    )
+    assert len(plan.runs) == 2
+    assert all(run.stage_with('syn') is not None for run in plan.runs)
+
+
+def test_forced_synb0_splits_for_t2wreg_but_not_for_topup(tmp_path):
+    """T2Wreg builds one warp per run; TOPUP applies its field per volume."""
+    kwargs = {'sdc_anat_reference': 'synb0', 'force_sdc_anat_reference': True}
+    tortoise = _plan_for(tmp_path / 'tortoise', 't2w_hcp', 'tortoise', 'drbuddi', **kwargs)
+    assert len(tortoise.runs) == 2
+    assert all(run.stage_with('t2wreg') is not None for run in tortoise.runs)
+    (eddy_run,) = _plan_for(tmp_path / 'eddy', 't2w_hcp', 'eddy', 'topup', **kwargs).runs
+    assert eddy_run.stage_with('topup') is not None
+
+
 def test_plan_serialization_shape(tmp_path):
     plan = _plan_for(tmp_path, 'hcp_style', 'eddy', 'topup+drbuddi')
     payload = plan.to_dict()
@@ -301,7 +341,7 @@ def test_run_lookup_helpers(tmp_path):
 
 def test_case_and_selection_coverage_stays_in_sync():
     """The parity sweep covers every scenario and flag variant under three selections."""
-    assert len(CASES) == len(SCENARIOS) + 4
+    assert len(CASES) == len(SCENARIOS) + 5
     assert len(SELECTIONS) == 3
     assert len({s.combination_key() for s in SELECTIONS}) == 3  # distinct selections
 

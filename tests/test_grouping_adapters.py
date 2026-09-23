@@ -403,6 +403,68 @@ def test_sidecar_overrides_preserve_exact_readout_time():
     assert unit.sidecar_overrides()[path]['TotalReadoutTime'] == exact_readout
 
 
+def test_gre_init_estimation_finds_nonapplied_gre_candidate():
+    """A PEPOLAR unit whose DWI also has a GRE candidate exposes that GRE
+    estimation (for initializing DRBUDDI); a GRE unit or a unit with no GRE
+    candidate exposes none."""
+    import dataclasses
+
+    from qsiplan.models import CorrectionMethod, FieldmapEstimation, Provenance
+
+    dwi = '/data/sub-01/dwi/sub-01_dir-AP_dwi.nii.gz'
+    record = FileRecord(
+        path=dwi,
+        datatype='dwi',
+        suffix='dwi',
+        session=None,
+        signature=DistortionSignature(pe_dir='j', readout_time=0.05),
+        metadata={'PhaseEncodingDirection': 'j', 'TotalReadoutTime': 0.05},
+        shelled=True,
+    )
+    pepolar = FieldmapEstimation(
+        b0field_id='pe',
+        method=CorrectionMethod.PEPOLAR,
+        sources=(dwi,),
+        provenance=Provenance.CURATED,
+    )
+    gre = FieldmapEstimation(
+        b0field_id='gre',
+        method=CorrectionMethod.PHASEDIFF,
+        sources=('/data/sub-01/fmap/sub-01_phasediff.nii.gz',),
+        provenance=Provenance.CURATED,
+    )
+
+    def _grouping(estimations, candidates):
+        return DWIGrouping(
+            subject_id='01',
+            files={dwi: record},
+            estimations=estimations,
+            application={},
+            application_provenance={},
+            application_candidates=candidates,
+            distortion_groups={},
+            concatenation_groups={},
+        )
+
+    both = _grouping({'pe': pepolar, 'gre': gre}, {dwi: ('pe', 'gre')})
+    pepolar_unit = PreprocUnit(
+        grouping=both, output_name='sub-01', dwi_files=(dwi,), estimation=pepolar
+    )
+    assert pepolar_unit.gre_init_estimation is gre
+
+    # A GRE unit is already the estimation, so there is nothing extra to init from.
+    assert dataclasses.replace(pepolar_unit, estimation=gre).gre_init_estimation is None
+
+    # No GRE candidate -> None.
+    only_pe = _grouping({'pe': pepolar}, {dwi: ('pe',)})
+    assert (
+        PreprocUnit(
+            grouping=only_pe, output_name='sub-01', dwi_files=(dwi,), estimation=pepolar
+        ).gre_init_estimation
+        is None
+    )
+
+
 def test_concatenation_scheme_multi_unit(tmp_path):
     """Two corrected units in one final output map to the shared final name."""
     grouping = load_scenario('two_gre_fmaps', tmp_path, strict=False)

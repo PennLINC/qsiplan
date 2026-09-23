@@ -111,6 +111,34 @@ class PreprocUnit:
         return self.is_pepolar or self.is_gre
 
     @property
+    def gre_init_estimation(self) -> FieldmapEstimation | None:
+        """A GRE fieldmap that is a *candidate* for these DWI but is not the
+        applied correction - usable to initialize the applied correction.
+
+        When a reverse-PE series also has a GRE (phasediff / two-phase / direct)
+        fieldmap, the grouping applies one method (PEPOLAR -> DRBUDDI) and keeps
+        the other in ``application_candidates``. This returns that GRE candidate
+        (lowest ``b0field_id`` when several), so DRBUDDI can be seeded with a
+        GRE-derived warp the way T2Wreg already is. ``None`` when the applied
+        correction is itself GRE (already the estimation) or no GRE candidate
+        exists.
+        """
+        if self.estimation is None or self.is_gre:
+            return None
+        applied = self.estimation.b0field_id
+        candidates = {
+            cand_id: self.grouping.estimations[cand_id]
+            for path in self.dwi_files
+            for cand_id in self.grouping.application_candidates.get(path, ())
+            if cand_id != applied
+            and cand_id in self.grouping.estimations
+            and self.grouping.estimations[cand_id].method in _GRE_SUFFIX
+        }
+        if not candidates:
+            return None
+        return candidates[min(candidates)]
+
+    @property
     def dwi_metadata(self) -> dict:
         """Sidecar metadata of the lead DWI series (already read into the model)."""
         return dict(self.dwi_records[0].metadata)
@@ -331,6 +359,37 @@ def _decompose_unit(
             )
         )
     return subunits
+
+
+def _encoding_key(grouping: DWIGrouping, path: str) -> tuple:
+    """The phase encoding (direction and polarity) and readout time of a file."""
+    sig = grouping.files[path].signature
+    return (sig.pe_dir, sig.readout_time)
+
+
+def _split_by_encoding(
+    grouping: DWIGrouping, unit, estimation: FieldmapEstimation | None
+) -> list[PreprocUnit]:
+    """One PreprocUnit per phase encoding and readout of ``unit``, each under
+    the unit's estimation. Names come from each part's files, disambiguated by
+    an ``acq-enc<N>`` label only where two parts would share one."""
+    by_encoding: dict[tuple, list[str]] = defaultdict(list)
+    for path in unit.dwi_files:
+        by_encoding[_encoding_key(grouping, path)].append(path)
+    subunits = []
+    used = set()
+    for index, key in enumerate(sorted(by_encoding, key=str), start=1):
+        files = tuple(sorted(by_encoding[key]))
+        name = derive_output_name(list(files))
+        if name in used:
+            name = derive_output_name(list(files), acq=f'enc{index}')
+        used.add(name)
+        subunits.append(
+            PreprocUnit(
+                grouping=grouping, output_name=name, dwi_files=files, estimation=estimation
+            )
+        )
+    return sorted(subunits, key=lambda subunit: subunit.output_name)
 
 
 def plan_preproc_units(grouping: DWIGrouping, plan) -> list[PreprocUnit]:

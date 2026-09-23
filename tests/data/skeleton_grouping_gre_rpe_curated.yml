@@ -1,0 +1,33 @@
+# An AP/PA pair of DWI series curated onto one phasediff (B0FieldSource on
+# both). Expected: one GRE correction unit, compiled into one run per phase
+# encoding - a GRE warp is built for one encoding - merged into one output.
+'01':
+  - anat:
+      - suffix: T1w
+    fmap:
+      - suffix: phasediff
+        metadata:
+          EchoTime1: 0.00492
+          EchoTime2: 0.00738
+          B0FieldIdentifier: gre
+      - suffix: magnitude1
+        metadata:
+          EchoTime: 0.00492
+          B0FieldIdentifier: gre
+      - suffix: magnitude2
+        metadata:
+          EchoTime: 0.00738
+          B0FieldIdentifier: gre
+    dwi:
+      - dir: AP
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldSource: gre
+      - dir: PA
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          B0FieldSource: gre
