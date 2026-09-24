@@ -33,3 +33,8 @@ env/
 
 # Rendered preview pages from local qsiplan runs
 grouping*.html
+
+# Documentation build products
+docs/_build/
+docs/api/generated/
+docs/.jupyter_cache/
