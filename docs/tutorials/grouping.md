@@ -306,10 +306,10 @@ print(report_text(g))
 
 What if you curate *some* scans and leave the rest alone? QSIPrep's rule is
 simple: **it guesses only when you have told it nothing.** In an uncurated
-session, absent metadata means "nobody looked", and inferring a PEPOLAR
-pairing is a service. Once anything in the session is curated, absent
+subject, absent metadata means "nobody looked", and inferring a PEPOLAR
+pairing is a service. Once any fieldmap in the subject is linked, absent
 metadata means "somebody looked and chose not to link these" — so the
-heuristic switches off for the remaining scans, and a warning tells you
+heuristic switches off for the remaining scans, in every session, and a warning tells you
 exactly what happened.
 
 Here run-1 is curated into `pepolar01` and run-2 carries nothing. Run-2 does
@@ -357,9 +357,11 @@ g = group(*runs, t2w, sdc_anat_reference='auto')
 print(report_text(g))
 ```
 
-**Partial `MultipartID`** works the same way: series carrying one are combined
-as asked, and series without one are *not* packaged with the curated groups —
-each of their correction units becomes its own output file:
+**Partial `MultipartID`** is stricter. A `MultipartID` anywhere in the subject
+means you decided which series to combine, so no concatenation is guessed for
+the rest: series carrying one are combined as asked, and a series without one
+is not combined with anything — not with series that share its distortion, and
+not with series that share its fieldmap. Each becomes its own output file:
 
 ```{code-cell} ipython3
 runs = [
@@ -379,6 +381,8 @@ for issue in g.warnings:
 Note that the *estimation* still pools all four scans (none of them carries
 `B0Field*` curation, and estimation membership is independent of the
 packaging) — so each output borrows the others' b=0 images for its fieldmap.
+The reverse also holds: `B0Field*` or `IntendedFor` metadata does not switch
+concatenation guessing off. Only a `MultipartID` does.
 
 ## 6. `ShimSetting`: when the scanner re-shims
 
@@ -525,7 +529,7 @@ for issue in g.issues:
 ```
 
 **2. It counts as curation** (section 5): once an `IntendedFor` links any
-series in a session, QSIPrep stops inferring reverse phase-encoding pairings
+series of a subject, QSIPrep stops inferring reverse phase-encoding pairings
 for the rest of it. Here the fieldmap is intended only for the AP series, so
 the unlinked PA series gets no estimation and goes uncorrected:
 

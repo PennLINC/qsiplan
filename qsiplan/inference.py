@@ -8,8 +8,8 @@ not, this module fills in equivalent values, with strict precedence:
 2. **IntendedFor** on fmap/ files is translated into estimations (step E2).
 3. A **heuristic** groups DWI series with differing phase encoding into one
    PEPOLAR estimation (step E3), which handles HCP-style acquisitions with
-   zero curation. It runs only in sessions with no curated fieldmap linkage
-   at all: once anything in a session is curated, QSIPrep stops guessing
+   zero curation. It runs only for subjects with no fieldmap linkage at
+   all: once anything in the subject is linked, QSIPrep stops guessing
    for the rest of it.
 
 The heuristic operates per (session, shim-compatible bucket), so a DWI series
@@ -17,6 +17,12 @@ with no reverse-PE partner of its own can still *borrow* compatible series
 from elsewhere in the session for fieldmap estimation - even when those
 series are concatenated into a different output. Estimation membership and
 concatenation membership are independent by design.
+
+Concatenation is guessed only when no series of the subject carries a
+``MultipartID`` (see :func:`has_multipart_ids`). Once any does, a series
+without one is an output of its own: it is not pooled with the series that
+share its distortion, its fieldmap or its session. Fieldmap curation has no
+such effect on concatenation.
 """
 
 from __future__ import annotations
@@ -59,6 +65,18 @@ _PROVENANCE_RANK = {
     Provenance.FORCED: 2,
     Provenance.INFERRED: 3,
 }
+
+
+def has_multipart_ids(records: list[FileRecord]) -> bool:
+    """True when any DWI series of the subject carries a ``MultipartID``.
+
+    A ``MultipartID`` anywhere means the curator decided which series to
+    combine, so no concatenation is guessed for the rest: a series without one
+    is never combined with anything. Fieldmap curation (``B0FieldIdentifier``,
+    ``B0FieldSource``, ``IntendedFor``) says nothing about concatenation and
+    does not have this effect.
+    """
+    return any(record.multipart_id for record in records if record.is_dwi)
 
 
 def _entity_stem(path: str) -> str:
@@ -337,13 +355,15 @@ def resolve_estimations(
         targets[b0field_id] = set(cluster_targets)
 
     # ------------------------------------------------------------------ E3
-    # The reverse phase-encoding heuristic runs only in sessions with no
+    # The reverse phase-encoding heuristic runs only for subjects with no
     # explicit fieldmap linkage. Where nothing is linked, absent metadata
-    # means "nobody looked" and guessing is a service; once any
-    # series in the session is linked - by B0FieldIdentifier/B0FieldSource
-    # or by an epi fieldmap's IntendedFor naming it - absent metadata means
+    # means "nobody looked" and guessing is a service; once anything in the
+    # subject is linked - by B0FieldIdentifier/B0FieldSource on any file, or
+    # by an epi fieldmap's IntendedFor naming a series - absent metadata means
     # "somebody looked and chose not to link these", so QSIPrep stops
-    # guessing. A GRE fieldmap's IntendedFor is not such a link: it lists the
+    # guessing, in every session (the same subject-wide scope a MultipartID
+    # has for concatenation; see has_multipart_ids).
+    # A GRE fieldmap's IntendedFor is not such a link: it lists the
     # series the fieldmap can correct, not a decision against pairing them,
     # and an inferred pair outranks it while leaving it a candidate (see
     # resolve_application). (Fieldmap-less correction still applies: unlike
@@ -353,14 +373,6 @@ def resolve_estimations(
         if estimation.provenance is Provenance.TRANSLATED and not estimation.is_gre:
             intendedfor_covered.update(targets[b0field_id])
 
-    #: Sessions where any file carries B0Field* metadata (a curated fmap or
-    #: anat counts even if no DWI sources it: the curator was here).
-    curated_sessions = {
-        record.session
-        for record in records
-        if record.b0field_identifiers or record.b0field_sources
-    }
-
     def _linked(record: FileRecord) -> bool:
         return bool(
             record.b0field_identifiers
@@ -369,17 +381,24 @@ def resolve_estimations(
         )
 
     dwi_records = [record for record in records if record.is_dwi]
+    #: Any file carrying B0Field* metadata counts (a curated fmap or anat
+    #: counts even if no DWI sources it: the curator was here).
+    fieldmaps_linked = any(
+        record.b0field_identifiers or record.b0field_sources for record in records
+    ) or any(_linked(record) for record in dwi_records)
+
     for session, session_records in sorted(
         _by_session(dwi_records).items(), key=lambda kv: str(kv[0])
     ):
-        unlinked = [record for record in session_records if not _linked(record)]
-        if session in curated_sessions or len(unlinked) < len(session_records):
+        if fieldmaps_linked:
+            unlinked = [record for record in session_records if not _linked(record)]
             if unlinked:
                 names = ', '.join(record.filename for record in unlinked)
                 issues.append(
                     warning(
                         'reverse-pe-not-inferred',
-                        f'{names}: this session has curated fieldmap metadata, so '
+                        f'{names}: this subject has fieldmaps linked by B0FieldIdentifier/'
+                        'B0FieldSource or IntendedFor, so '
                         'QSIPrep does not infer reverse phase-encoding pairings for '
                         'the remaining series. Add B0FieldIdentifier/B0FieldSource '
                         'to correct them (fieldmap-less correction can still be '
@@ -812,25 +831,34 @@ def build_distortion_groups(
     them, and their output (MultipartID or ``separate_all_dwis``), so a single
     group can never span two fieldmaps or two output files. A series curated
     into several MultipartIDs (virtual acquisitions) contributes to one group per
-    output scope, so the group's scope is stored, never re-derived.
+    output scope, so the group's scope is stored, never re-derived. When any
+    series of the subject has a MultipartID (:func:`has_multipart_ids`), a
+    series without one is a group of its own: no concatenation is guessed.
     """
+    explicit_outputs = has_multipart_ids(records)
     dwi_records = [record for record in records if record.is_dwi]
     buckets = defaultdict(list)
     for record in dwi_records:
-        if separate_all_dwis:
-            walls = (record.path,)
+        # Dedupe repeated sidecar ids.
+        multipart_ids = tuple(dict.fromkeys(record.multipart_id))
+        # (wall, scope): the wall partitions the series, the scope is the
+        # MultipartID the group belongs to (None when it has none).
+        if separate_all_dwis or (explicit_outputs and not multipart_ids):
+            walls = ((record.path, None),)
+        elif multipart_ids:
+            walls = tuple((multipart_id, multipart_id) for multipart_id in multipart_ids)
         else:
-            # Dedupe repeated sidecar ids; `or (None,)` keeps uncurated
-            # series (empty MultipartID) in a single None-scoped group.
-            walls = tuple(dict.fromkeys(record.multipart_id)) or (None,)
-        for wall in walls:
-            buckets[(record.session, record.signature.key, application[record.path], wall)].append(
-                record
-            )
+            # No MultipartID in the subject: series sharing a distortion and a
+            # correction form one group.
+            walls = ((None, None),)
+        for wall, scope in walls:
+            bucket = (record.session, record.signature.key, application[record.path], wall, scope)
+            buckets[bucket].append(record)
 
     groups: dict[str, DistortionGroup] = {}
-    for (_, _, applied, wall), members in sorted(buckets.items(), key=lambda kv: kv[1][0].path):
-        scope = None if separate_all_dwis else wall
+    for (_, _, applied, _, scope), members in sorted(
+        buckets.items(), key=lambda kv: kv[1][0].path
+    ):
         key = _unique_id(
             derive_output_name([record.path for record in members]), groups, scope=scope
         )
@@ -855,14 +883,22 @@ def build_correction_units(
     must share ONE applied correction: within a (session, MultipartID scope)
     wall, the groups applying the same non-null estimation form one unit (a
     PEPOLAR pair's two polarities, corrected jointly); uncorrected groups -
-    and every group under ``separate_all_dwis`` - stand alone. Units never
-    span sessions or MultipartIDs.
+    and every group under ``separate_all_dwis`` - stand alone. So does a group
+    without a MultipartID when other series of the subject have one
+    (:func:`has_multipart_ids`): pooling it with another group, even one
+    applying the same estimation, would be a guess about concatenation. Units
+    never span sessions or MultipartIDs.
     """
+    explicit_outputs = has_multipart_ids(records)
     dwi_records = {record.path: record for record in records if record.is_dwi}
 
     buckets: dict[tuple, list[str]] = defaultdict(list)
     for key, dgroup in distortion_groups.items():
-        if separate_all_dwis or dgroup.b0field_source is None:
+        if (
+            separate_all_dwis
+            or dgroup.b0field_source is None
+            or (explicit_outputs and dgroup.multipart_scope is None)
+        ):
             bucket = ('single', key)
         else:
             record = dwi_records[dgroup.dwi_files[0]]
@@ -903,7 +939,8 @@ def build_concatenation_groups(
     Each unit is preprocessed independently; a final output spanning several
     units concatenates (or averages, per ``distortion_group_merge``) their
     *corrected* results. Curated MultipartIDs define the final outputs
-    verbatim. Otherwise, all corrected units in a session are packaged into
+    verbatim, and once any series has one, a series without one is an output
+    of its own. Otherwise, all corrected units in a session are packaged into
     one final output ('concat'/'average') or kept separate ('none');
     uncorrected units always stand alone - corrected and uncorrected volumes
     never share a file.
@@ -951,10 +988,10 @@ def build_concatenation_groups(
                 warning(
                     'partial-multipart',
                     f'{len(uncurated_files)} DWI series have no MultipartID while other '
-                    'series in this subject do. Series without one are NOT packaged '
-                    'with the curated groups: each of their correction units becomes '
-                    'its own output. Set MultipartID on every series (or on none) to '
-                    'control the packaging explicitly.',
+                    'series in this subject do. No concatenation is guessed once a '
+                    'MultipartID is present, so a series without one is not combined '
+                    'with anything: each is its own output. Set MultipartID on every '
+                    'series you want combined.',
                     tuple(sorted(uncurated_files)),
                 )
             )
