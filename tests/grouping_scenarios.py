@@ -57,6 +57,7 @@ SCENARIOS = [
     'multi_session',
     'multi_session_b0field_reused',
     'multi_session_curated_multipart',
+    'multi_session_partial_curation',
     'multi_session_shared_fmap',
     'multipart_splits_estimation',
     'name_collision',

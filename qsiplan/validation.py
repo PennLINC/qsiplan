@@ -136,7 +136,7 @@ ISSUE_CODES: dict[str, IssueSpec] = {
     ),
     # ---- reverse-PE heuristic (E3) and shims --------------------------------
     'reverse-pe-not-inferred': _spec(
-        'A session has curated fieldmap metadata, so reverse-PE pairing is not inferred.',
+        'The subject has linked fieldmaps, so reverse-PE pairing is not inferred.',
         'warning',
     ),
     'session-multiple-shims': _spec(

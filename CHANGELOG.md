@@ -6,6 +6,9 @@
 - With a `MultipartID` anywhere in a subject, no concatenation is guessed: a series
   without one is its own output, even when it shares a distortion or a fieldmap with
   another series. Subjects with no `MultipartID` are grouped as before.
+- Reverse-PE pairing is inferred only for subjects with no linked fieldmap. A link in one
+  session (`B0Field*`, or an epi fieldmap's `IntendedFor`) now stops the inference in every
+  session of the subject; the check used to be per session.
 
 ## 0.4.1 (2026-09-23)
 

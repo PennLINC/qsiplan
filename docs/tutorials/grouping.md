@@ -306,10 +306,10 @@ print(report_text(g))
 
 What if you curate *some* scans and leave the rest alone? QSIPrep's rule is
 simple: **it guesses only when you have told it nothing.** In an uncurated
-session, absent metadata means "nobody looked", and inferring a PEPOLAR
-pairing is a service. Once anything in the session is curated, absent
+subject, absent metadata means "nobody looked", and inferring a PEPOLAR
+pairing is a service. Once any fieldmap in the subject is linked, absent
 metadata means "somebody looked and chose not to link these" — so the
-heuristic switches off for the remaining scans, and a warning tells you
+heuristic switches off for the remaining scans, in every session, and a warning tells you
 exactly what happened.
 
 Here run-1 is curated into `pepolar01` and run-2 carries nothing. Run-2 does
@@ -529,7 +529,7 @@ for issue in g.issues:
 ```
 
 **2. It counts as curation** (section 5): once an `IntendedFor` links any
-series in a session, QSIPrep stops inferring reverse phase-encoding pairings
+series of a subject, QSIPrep stops inferring reverse phase-encoding pairings
 for the rest of it. Here the fieldmap is intended only for the AP series, so
 the unlinked PA series gets no estimation and goes uncorrected:
 

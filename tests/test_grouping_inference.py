@@ -458,6 +458,24 @@ def test_fieldmap_curation_alone_does_not_stop_concatenation(tmp_path):
     assert 'partial-multipart' not in issue_codes(grouping.warnings)
 
 
+def test_fieldmap_links_stop_pairing_in_every_session(tmp_path):
+    """A fieldmap linked in one session switches reverse-PE pairing inference
+    off for the whole subject, the scope a MultipartID has for concatenation."""
+    grouping = load_scenario('multi_session_partial_curation', tmp_path)
+
+    assert list(grouping.estimations) == ['pepolar01']
+    applied = {op.basename(path): source for path, source in grouping.application.items()}
+    assert applied == {
+        'sub-01_ses-1_dir-AP_dwi.nii.gz': 'pepolar01',
+        'sub-01_ses-1_dir-PA_dwi.nii.gz': 'pepolar01',
+        'sub-01_ses-2_dir-AP_dwi.nii.gz': None,
+        'sub-01_ses-2_dir-PA_dwi.nii.gz': None,
+    }
+    (issue,) = [issue for issue in grouping.warnings if issue.code == 'reverse-pe-not-inferred']
+    assert 'sub-01_ses-2_dir-AP_dwi.nii.gz, sub-01_ses-2_dir-PA_dwi.nii.gz' in issue.render()
+    assert 'ses-1' not in issue.render()
+
+
 def test_cross_axis_b0field(tmp_path):
     """A curated identifier spanning axes works under every selection when each
     axis is its own opposing pair: TOPUP pools all four directions, and DRBUDDI

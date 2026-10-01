@@ -91,9 +91,10 @@ report:
 : Requested by a command-line flag, such as an explicit `--sdc-anat-reference`.
 
 `inferred`
-: A heuristic. The reverse-PE pairing runs only in sessions with no curated
-  fieldmap linkage at all; once anything in a session is curated, the rest
-  of that session is not guessed.
+: A heuristic. The reverse-PE pairing runs only for subjects with no
+  fieldmap linkage at all; once any fieldmap in the subject is linked, by
+  `B0Field*` or by an epi fieldmap's `IntendedFor`, no pairing is guessed
+  in any of its sessions.
 
 ## Anatomical SDC reference: fallback or override
 

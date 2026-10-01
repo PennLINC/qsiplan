@@ -21,7 +21,7 @@ Fieldmap estimations:
     phase encoding axes: j (bidirectional)
 
 Notes:
-  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz: this session has curated fieldmap metadata, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series. Add B0FieldIdentifier/B0FieldSource to correct them (fieldmap-less correction can still be requested at the command line).
+  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz: this subject has fieldmaps linked by B0FieldIdentifier/B0FieldSource or IntendedFor, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series. Add B0FieldIdentifier/B0FieldSource to correct them (fieldmap-less correction can still be requested at the command line).
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 -----------------------------------------------------------------------
