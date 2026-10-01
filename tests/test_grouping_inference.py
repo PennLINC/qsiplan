@@ -380,24 +380,82 @@ def test_partial_multipart(tmp_path):
         concat.output_name: basenames(concat.dwi_files)
         for concat in grouping.concatenation_groups.values()
     }
-    # The uncurated run-2 pair shares one correction unit (one estimation
-    # corrects both), so that unit becomes one standalone output.
+    # The run-2 pair would be one correction unit (one estimation corrects
+    # both), but a unit is one output, so each series is a unit of its own.
     assert outputs == {
         'sub-01_run-1': [
             'sub-01_dir-AP_run-1_dwi.nii.gz',
             'sub-01_dir-PA_run-1_dwi.nii.gz',
         ],
-        'sub-01_run-2': [
-            'sub-01_dir-AP_run-2_dwi.nii.gz',
-            'sub-01_dir-PA_run-2_dwi.nii.gz',
-        ],
+        'sub-01_dir-AP_run-2': ['sub-01_dir-AP_run-2_dwi.nii.gz'],
+        'sub-01_dir-PA_run-2': ['sub-01_dir-PA_run-2_dwi.nii.gz'],
     }
     assert 'partial-multipart' in issue_codes(grouping.warnings)
+    assert not grouping.errors
 
     # With no B0Field curation anywhere, all four series still share the
     # single inferred estimation (concatenation and estimation membership
     # are independent).
     assert set(grouping.application.values()) == {'auto+pepolar+j'}
+
+
+def test_partial_multipart_does_not_pool_a_shared_distortion(tmp_path):
+    """Sharing a phase encoding direction is not a reason to combine series
+    once a MultipartID is present: each series without one stands alone."""
+    grouping = load_scenario('partial_multipart_same_ped', tmp_path)
+
+    outputs = {
+        concat.output_name: basenames(concat.dwi_files)
+        for concat in grouping.concatenation_groups.values()
+    }
+    assert outputs == {
+        'sub-01': ['sub-01_run-1_dwi.nii.gz', 'sub-01_run-2_dwi.nii.gz'],
+        'sub-01_run-3': ['sub-01_run-3_dwi.nii.gz'],
+        'sub-01_run-4': ['sub-01_run-4_dwi.nii.gz'],
+    }
+    assert 'partial-multipart' in issue_codes(grouping.warnings)
+    # Pooling run-3 with run-4 used to name their output 'sub-01' as well.
+    assert not grouping.errors
+
+
+def test_partial_multipart_does_not_pool_a_shared_fieldmap(tmp_path):
+    """A curated fieldmap links series for correction, not for concatenation:
+    with a MultipartID present, the series sharing one are still corrected by
+    it but are written as separate outputs."""
+    grouping = load_scenario('partial_multipart_shared_field', tmp_path)
+
+    outputs = {
+        concat.output_name: basenames(concat.dwi_files)
+        for concat in grouping.concatenation_groups.values()
+    }
+    assert outputs == {
+        'sub-01_run-1': [
+            'sub-01_dir-AP_run-1_dwi.nii.gz',
+            'sub-01_dir-PA_run-1_dwi.nii.gz',
+        ],
+        'sub-01_dir-AP_run-2': ['sub-01_dir-AP_run-2_dwi.nii.gz'],
+        'sub-01_dir-PA_run-2': ['sub-01_dir-PA_run-2_dwi.nii.gz'],
+    }
+    applied = {op.basename(path): source for path, source in grouping.application.items()}
+    assert applied['sub-01_dir-AP_run-2_dwi.nii.gz'] == 'pepolar02'
+    assert applied['sub-01_dir-PA_run-2_dwi.nii.gz'] == 'pepolar02'
+    assert {'partial-multipart', 'estimation-spans-outputs'} <= issue_codes(grouping.warnings)
+    assert not grouping.errors
+    # Each lone series borrows its partner's b=0, so the plan stays feasible.
+    assert not [issue for issue in plan_issues(grouping, EDDY_TOPUP) if issue.severity == 'error']
+
+
+def test_fieldmap_curation_alone_does_not_stop_concatenation(tmp_path):
+    """Only a MultipartID switches concatenation guessing off. A subject curated
+    with B0Field* but no MultipartID is still packaged by the default rule."""
+    grouping = load_scenario('cross_axis_b0field', tmp_path)
+
+    assert not any(record.multipart_id for record in grouping.files.values() if record.is_dwi)
+    assert any(record.b0field_sources for record in grouping.files.values())
+    (concat,) = grouping.concatenation_groups.values()
+    assert concat.provenance is Provenance.INFERRED
+    assert len(concat.dwi_files) == 4
+    assert 'partial-multipart' not in issue_codes(grouping.warnings)
 
 
 def test_cross_axis_b0field(tmp_path):

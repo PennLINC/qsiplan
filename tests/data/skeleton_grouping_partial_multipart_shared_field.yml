@@ -1,0 +1,44 @@
+# Partially curated concatenation where the series without a MultipartID
+# share a curated fieldmap: both pairs are linked with B0FieldIdentifier/
+# B0FieldSource, but only run-1 carries MultipartID 'combined'.
+# Expected: one curated output for run-1; run-2 AP and PA are each their own
+# output, both still corrected by 'pepolar02' (each borrows the other's b=0).
+# A shared fieldmap links series for correction, not for concatenation.
+'01':
+  - anat:
+      - suffix: T1w
+    dwi:
+      - dir: AP
+        run: '1'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar01
+          B0FieldSource: pepolar01
+          MultipartID: combined
+      - dir: PA
+        run: '1'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar01
+          B0FieldSource: pepolar01
+          MultipartID: combined
+      - dir: AP
+        run: '2'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar02
+          B0FieldSource: pepolar02
+      - dir: PA
+        run: '2'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar02
+          B0FieldSource: pepolar02

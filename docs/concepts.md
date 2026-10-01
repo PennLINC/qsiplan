@@ -14,8 +14,10 @@ that data is decided afterwards, when the plan is compiled.
 The purpose of a qsiplan run is to get the outputs you want. An output is
 one preprocessed DWI file. It corresponds to a `MultipartID`: the series that share a
 `MultipartID` are processed together and concatenated in qsiprep's
-derivatives. Without curation, the corrected series of a session form one
-output. With `--separate-all-dwis`, every series is an output on its own.
+derivatives. When no series of the subject has a `MultipartID`, the corrected
+series of a session form one output. Once any series has one, nothing is
+guessed about concatenation: a series without a `MultipartID` is an output on
+its own. With `--separate-all-dwis`, every series is an output on its own.
 
 How to name outputs, and how to send one series to several outputs, are in
 section 4 of {doc}`tutorials/grouping`.

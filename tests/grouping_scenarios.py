@@ -67,6 +67,8 @@ SCENARIOS = [
     'partial_curation_stranded',
     'partial_intendedfor',
     'partial_multipart',
+    'partial_multipart_same_ped',
+    'partial_multipart_shared_field',
     'partial_pair',
     'reshim',
     'same_ped_own_fmaps',

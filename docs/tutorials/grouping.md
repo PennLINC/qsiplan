@@ -357,9 +357,11 @@ g = group(*runs, t2w, sdc_anat_reference='auto')
 print(report_text(g))
 ```
 
-**Partial `MultipartID`** works the same way: series carrying one are combined
-as asked, and series without one are *not* packaged with the curated groups —
-each of their correction units becomes its own output file:
+**Partial `MultipartID`** is stricter. A `MultipartID` anywhere in the subject
+means you decided which series to combine, so no concatenation is guessed for
+the rest: series carrying one are combined as asked, and a series without one
+is not combined with anything — not with series that share its distortion, and
+not with series that share its fieldmap. Each becomes its own output file:
 
 ```{code-cell} ipython3
 runs = [
@@ -379,6 +381,8 @@ for issue in g.warnings:
 Note that the *estimation* still pools all four scans (none of them carries
 `B0Field*` curation, and estimation membership is independent of the
 packaging) — so each output borrows the others' b=0 images for its fieldmap.
+The reverse also holds: `B0Field*` or `IntendedFor` metadata does not switch
+concatenation guessing off. Only a `MultipartID` does.
 
 ## 6. `ShimSetting`: when the scanner re-shims
 

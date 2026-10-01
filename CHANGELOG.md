@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Add documentation site.
+- With a `MultipartID` anywhere in a subject, no concatenation is guessed: a series
+  without one is its own output, even when it shares a distortion or a fieldmap with
+  another series. Subjects with no `MultipartID` are grouped as before.
 
 ## 0.4.1 (2026-09-23)
 

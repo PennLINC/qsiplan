@@ -202,7 +202,9 @@ ISSUE_CODES: dict[str, IssueSpec] = {
         'separate_all_dwis overrides the MultipartIDs in the sidecars.', 'warning'
     ),
     'partial-multipart': _spec(
-        'Some DWI series have a MultipartID and others do not; the latter stand alone.', 'warning'
+        'Some DWI series have a MultipartID and others do not; each of the latter is its '
+        'own output.',
+        'warning',
     ),
     'multipart-overlap': _spec(
         'A DWI series lists several MultipartIDs and is preprocessed once per group.', 'warning'
