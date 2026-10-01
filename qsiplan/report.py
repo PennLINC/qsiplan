@@ -245,8 +245,7 @@ def _output_step_lines(grouping, selection, multipart_id, backend_issues) -> lis
         if n_series > 1:
             lines.append(
                 '  1. Each series is denoised on its own, then all '
-                f'{n_series} series are concatenated. '
-                '(--denoise-after-combining reverses this order.)'
+                f'{n_series} series are concatenated.'
             )
         else:
             lines.append('  1. The series is denoised.')

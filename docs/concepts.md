@@ -75,6 +75,31 @@ A unit's fieldmap may be estimated with b=0 images from series in another
 output. The report marks these with `Borrows for fieldmap estimation`, and
 section 4 of {doc}`tutorials/grouping` shows an example.
 
+## Denoising order
+
+Each DWI series is denoised on its own, before it is concatenated with
+anything. qsiprep's `--denoise-after-combining` option, which concatenated
+first and denoised the result, is deprecated, and qsiplan no longer
+describes it.
+
+To denoise several series as one, concatenate them yourself before running
+qsiprep, writing one series with one sidecar and merged `.bval`/`.bvec`
+files in the same volume order. Do this only for series that share an
+acquisition:
+
+- the same `PhaseEncodingDirection`, `TotalReadoutTime` and `ShimSetting`,
+  since one sidecar cannot describe two distortions. Never merge a `dir-AP`
+  series with its `dir-PA` partner;
+- the same voxel grid and orientation, ideally with no repositioning
+  between the series;
+- the same intensity scaling. Denoising assumes the noise level is the same
+  across volumes, and runs scaled differently by the scanner break that.
+
+Head motion between the series is not corrected before denoising, so the
+more the head moved between them, the less concatenating first helps.
+The merged file is a single series to qsiplan: drop any `MultipartID` the
+parts carried and rerun qsiplan to see the new plan.
+
 ## Provenance tags
 
 Every decision carries a provenance tag, printed in brackets in the text

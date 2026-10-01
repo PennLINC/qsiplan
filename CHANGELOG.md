@@ -9,6 +9,9 @@
 - Reverse-PE pairing is inferred only for subjects with no linked fieldmap. A link in one
   session (`B0Field*`, or an epi fieldmap's `IntendedFor`) now stops the inference in every
   session of the subject; the check used to be per session.
+- Stop mentioning qsiprep's deprecated `--denoise-after-combining` in reports. Series
+  are always denoised on their own; the concepts page explains how to concatenate
+  series yourself before running qsiprep if you want them denoised together.
 
 ## 0.4.1 (2026-09-23)
 
