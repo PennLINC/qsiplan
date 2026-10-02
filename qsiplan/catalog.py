@@ -11,7 +11,7 @@ import os.path as op
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from .bids import is_bids_label
+from .bids import is_bids_label, parse_file_entities
 
 
 @runtime_checkable
@@ -86,6 +86,15 @@ class Bids2TableCatalog:
         result = {label: {'dwi': [], 'fmap': [], 't1w': [], 't2w': []} for label in labels}
         if not table.num_rows:
             return result
+
+        # bids2table reads the datatype out of the absolute path, where a
+        # ``sub-*`` directory above the dataset root misleads it. Its ``path``
+        # column is relative to the root, so the datatype is re-read from that.
+        datatype = pa.array(
+            [parse_file_entities(path).get('datatype') for path in table['path'].to_pylist()],
+            type=pa.string(),
+        )
+        table = table.set_column(table.schema.get_field_index('datatype'), 'datatype', datatype)
 
         mask = pc.and_(
             pc.is_in(table['datatype'], value_set=pa.array(['dwi', 'fmap', 'anat'])),

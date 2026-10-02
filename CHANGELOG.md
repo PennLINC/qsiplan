@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix a dataset that sits below a directory named `sub-*` (e.g. a per-subject working
+  directory, `work/sub-01/data/sub-01/dwi/`) being read with the wrong datatype, so its
+  images were neither DWIs nor fieldmaps. The datatype is now read from the file's own
+  directory instead of from the first `sub-*` component of the absolute path.
 - Add documentation site.
 - With a `MultipartID` anywhere in a subject, no concatenation is guessed: a series
   without one is its own output, even when it shares a distortion or a fieldmap with

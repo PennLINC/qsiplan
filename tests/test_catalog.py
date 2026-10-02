@@ -4,9 +4,11 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 from qsiplan import index_subject
 from qsiplan import metadata as metadata_module
-from qsiplan.bids import BIDSInheritanceIndex
+from qsiplan.bids import BIDSInheritanceIndex, parse_file_entities
 from qsiplan.catalog import Bids2TableCatalog
 
 
@@ -125,6 +127,46 @@ def test_catalog_root_controls_inheritance_when_description_is_missing(tmp_path)
     records, _issues = index_subject(catalog, data)
     dwi = next(record for record in records if record.is_dwi)
     assert dwi.signature.readout_time == 0.05
+
+
+@pytest.mark.parametrize(
+    ('path', 'datatype'),
+    [
+        ('/data/sub-01/dwi/sub-01_dwi.nii.gz', 'dwi'),
+        ('/data/sub-01/ses-1/fmap/sub-01_ses-1_dir-PA_epi.nii.gz', 'fmap'),
+        ('sub-01/anat/sub-01_T1w.nii.gz', 'anat'),
+        # A ``sub-*`` directory above the dataset root is not the subject directory.
+        ('/work/sub-01/data/sub-01/ses-1/dwi/sub-01_ses-1_dwi.nii.gz', 'dwi'),
+        ('/work/sub-01/data/sub-01/dwi/sub-01_dwi.nii.gz', 'dwi'),
+        # Files that are not in a datatype directory have no datatype.
+        ('/work/sub-01/data/sub-01/sub-01_scans.tsv', None),
+        ('/work/sub-01/data/sub-01/ses-1/sub-01_ses-1_scans.tsv', None),
+        ('/work/sub-01/data/participants.tsv', None),
+        ('/work/sub-01/sub-01/sub-01_scans.tsv', None),
+        ('/scratch/sub-01_dwi.nii.gz', None),
+    ],
+)
+def test_datatype_is_read_from_the_files_own_directory(path, datatype):
+    assert parse_file_entities(path).get('datatype') == datatype
+
+
+def test_dataset_below_a_subject_named_directory(tmp_path):
+    """A dataset staged under a directory that is itself named ``sub-*``.
+
+    The datatype used to be taken from whatever followed the first ``sub-*``
+    component of the absolute path, so every image here was indexed with the
+    datatype ``bids`` - neither a DWI nor a fieldmap.
+    """
+    staged = tmp_path / 'sub-01'
+    staged.mkdir()
+    root = _dataset(staged)
+    catalog = Bids2TableCatalog(root)
+    data = catalog.subject_data('01', session_filter=('01',))
+    records, issues = index_subject(catalog, data)
+    assert sorted(record.datatype for record in records) == ['anat', 'dwi', 'fmap']
+    dwi = next(record for record in records if record.is_dwi)
+    assert dwi.max_bval == 1000.0
+    assert not issues
 
 
 def test_inheritance_directories_are_scanned_once(tmp_path, monkeypatch):
