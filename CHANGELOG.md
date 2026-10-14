@@ -7,7 +7,9 @@
   (`--sdc-anat-reference`: `synb0`, `invt1w`, `t2w`), with the issues each combination
   raises, instead of `auto` and the rule that a T2w selects a correction by itself. The
   correction stays off by default (`none`): an output no fieldmap reaches is left uncorrected,
-  and the `no-sdc` warning names the flag that would correct it.
+  and the `no-sdc` warning names the flag that would correct it: SynB0 + TOPUP when the subject
+  has a T1w, the experimental unpile against the T2w when a T2w is all there is. The
+  `synb0-requires-t1w` error names unpile the same way.
 - unpile is a correction method of its own (`CorrectionMethod.UNPILE`), planned for every head
   motion method against the synthetic b=0 or the T2w, with a GRE fieldmap that also lists the
   series as its prior.

@@ -818,6 +818,14 @@ def resolve_fieldmapless(
                 targets = [p for p in targets if p not in missing]
         if targets and not _apply(targets, session):
             code, message = reference.missing_anat_issue
+            if reference.source_suffix == 'T1w' and any(
+                record.is_anat and record.suffix == 'T2w' for record in records
+            ):
+                message += (
+                    ' This subject has a T2w, which the experimental unpile correction can '
+                    'use instead (--sdc-fieldmapless-method unpile --sdc-anat-reference '
+                    't2w); inspect its result in the report before relying on it.'
+                )
             issues.append(error(code, message, tuple(targets)))
 
     return issues

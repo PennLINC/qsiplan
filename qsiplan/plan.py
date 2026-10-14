@@ -406,6 +406,28 @@ def _stages_for_unit(
     return (hmc,)
 
 
+def _fieldmapless_hint(grouping: DWIGrouping) -> str:
+    """The fieldmap-less correction this subject could opt into, if any.
+
+    The established path (SynB0 + TOPUP from the T1w) is the only one offered when a
+    T1w exists; the experimental unpile is named only when a T2w is all there is, with
+    its caveat in the same sentence, so the report never steers a user away from SynB0.
+    """
+    if grouping.anat_files('T1w'):
+        return (
+            ' Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the '
+            'T1w (SynB0 + TOPUP).'
+        )
+    if grouping.anat_files('T2w'):
+        return (
+            ' This subject has no T1w for SynB0 but has a T2w, which the experimental '
+            'unpile correction can use (--sdc-fieldmapless-method unpile '
+            '--sdc-anat-reference t2w); inspect its result in the report before relying '
+            'on it.'
+        )
+    return ' No anatomical image that a fieldmap-less correction could use was found.'
+
+
 def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[GroupingIssue]:
     """The feasibility issues for ``selection``, one output at a time.
 
@@ -440,10 +462,7 @@ def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[Grou
                 hint = ''
             elif policy.sdc_anat_reference == 'none':
                 why = 'no fieldmap-less correction was requested'
-                hint = (
-                    ' Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 '
-                    'from the T1w (SynB0 + TOPUP).'
-                )
+                hint = _fieldmapless_hint(grouping)
             else:
                 why = 'the fieldmap-less correction could not be set up for it (see the errors)'
                 hint = ''

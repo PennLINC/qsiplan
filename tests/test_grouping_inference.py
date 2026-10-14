@@ -896,6 +896,10 @@ def test_t2w_only_subject_needs_a_t1w_for_synb0(tmp_path):
     errors = [issue for issue in grouping.errors if issue.code == 'synb0-requires-t1w']
     assert errors
     assert '--sdc-anat-reference none' in errors[0].message
+    # The T2w is the one thing a fieldmap-less correction could use here: unpile is
+    # named, as experimental, in the same sentence as its flags.
+    assert '--sdc-fieldmapless-method unpile --sdc-anat-reference t2w' in errors[0].message
+    assert 'experimental' in errors[0].message
 
 
 def test_ignore_t2w_removes_the_t2w_from_indexing(tmp_path):
@@ -956,6 +960,34 @@ def test_fieldmapless_t1w_only(tmp_path):
     assert set(grouping.application.values()) == {None}
     for selection in (EDDY_TOPUP, TORTOISE_DRBUDDI, EDDY_TOPUP_DRBUDDI):
         assert 'no-sdc' in issue_codes(plan_issues(grouping, selection))
+
+
+def _no_sdc_message(grouping):
+    (issue,) = [issue for issue in plan_issues(grouping, EDDY_TOPUP) if issue.code == 'no-sdc']
+    return issue.message
+
+
+def test_no_sdc_warning_names_what_the_subject_can_use(tmp_path):
+    """Off by default, the no-sdc warning offers SynB0 when a T1w exists, names the
+    experimental unpile only when a T2w is all there is, and offers nothing otherwise."""
+    with_t1w = _no_sdc_message(load_scenario('fieldmapless_t1w_only', tmp_path / 't1w'))
+    assert '--sdc-anat-reference synb0' in with_t1w
+    assert 'unpile' not in with_t1w
+
+    both = _no_sdc_message(load_scenario('fieldmapless_t2w', tmp_path / 'both'))
+    assert '--sdc-anat-reference synb0' in both
+    assert 'unpile' not in both
+
+    t2w_only = _no_sdc_message(load_scenario('fieldmapless_t2w_only', tmp_path / 't2w'))
+    assert '--sdc-fieldmapless-method unpile --sdc-anat-reference t2w' in t2w_only
+    assert 'experimental' in t2w_only
+    assert 'synb0' not in t2w_only
+
+    grouping = load_scenario('fieldmapless_t1w_only', tmp_path / 'noanat', strict=False)
+    records = [record for record in grouping.files.values() if not record.is_anat]
+    nothing = _no_sdc_message(build_grouping(records, subject_id='01'))
+    assert 'No anatomical image' in nothing
+    assert '--sdc-anat-reference' not in nothing
 
 
 def test_fieldmapless_t1w_only_synb0(tmp_path):
