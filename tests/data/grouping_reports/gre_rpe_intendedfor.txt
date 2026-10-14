@@ -12,7 +12,7 @@ Output "sub-01" (MultipartID auto+concat+0 [inferred]): 2 series
     (also eligible: auto+fmap+sub-01)
 
 Fieldmap estimations:
-  auto+fmap+sub-01 [intendedfor]: GRE phase difference (initializes DRBUDDI/T2Wreg)
+  auto+fmap+sub-01 [intendedfor]: GRE phase difference (initializes DRBUDDI/unpile)
     - sub-01_magnitude1.nii.gz
     - sub-01_magnitude2.nii.gz
     - sub-01_phasediff.nii.gz
@@ -22,7 +22,7 @@ Fieldmap estimations:
     phase encoding axes: j (bidirectional)
 
 Notes:
-  WARNING [estimation-unused]: Fieldmap estimation 'auto+fmap+sub-01' [intendedfor] is not applied to any DWI series; it initializes DRBUDDI or T2Wreg where those correct a series it lists.
+  WARNING [estimation-unused]: Fieldmap estimation 'auto+fmap+sub-01' [intendedfor] is not applied to any DWI series; it initializes DRBUDDI or unpile where those correct a series it lists.
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 -----------------------------------------------------------------------

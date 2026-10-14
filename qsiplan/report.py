@@ -32,12 +32,12 @@ from typing import NamedTuple
 
 from .methods import HmcMethod, MethodSelection, SdcTool, selection_for_config
 from .models import CorrectionMethod, DWIGrouping
+from .plan import _fieldmapless_fallback
 from .validation import (
     blip_pair_polarities,
     blip_sort_key,
     describe_blip_group,
     dwi_blip_pairs,
-    structural_target,
 )
 
 _METHOD_LABELS = {
@@ -46,7 +46,7 @@ _METHOD_LABELS = {
     CorrectionMethod.PHASEDIFF: 'GRE phase difference',
     CorrectionMethod.PHASES: 'GRE two-phase',
     CorrectionMethod.SYNB0: 'SyNb0 synthetic b=0',
-    CorrectionMethod.T2WREG: 'T2w registration (T2Wreg)',
+    CorrectionMethod.UNPILE: 'unpile fieldmap-less (experimental)',
     CorrectionMethod.NIPREPS_SYN: 'fieldmap-less SyN',
 }
 
@@ -134,7 +134,7 @@ def report_text(grouping: DWIGrouping) -> str:
             if b0field_id in applied_ids:
                 unused = ''
             elif grouping.initializes_only(b0field_id):
-                unused = ' (initializes DRBUDDI/T2Wreg)'
+                unused = ' (initializes DRBUDDI/unpile)'
             else:
                 unused = ' (not used)'
             lines.append(
@@ -193,7 +193,9 @@ def _describe_unit(lines, grouping, selection, multipart_id, unit, step) -> int:
     corrected = _unit_corrected(grouping, unit)
     dgroups = [grouping.distortion_groups[key] for key in unit.distortion_groups]
     if selection.hmc is HmcMethod.TORTOISE:
-        return _describe_tortoise(lines, grouping, multipart_id, corrected, dgroups, step)
+        return _describe_tortoise(
+            lines, grouping, selection, multipart_id, corrected, dgroups, step
+        )
     if selection.hmc is HmcMethod.SHORELINE:
         return _describe_shoreline(
             lines, grouping, selection, multipart_id, corrected, dgroups, step
@@ -389,6 +391,11 @@ def _stage_text(grouping: DWIGrouping, selection: MethodSelection, stage) -> str
     from .plan import StageRole
 
     if stage.tool == 'topup':
+        if stage.role is StageRole.ESTIMATE_AND_APPLY:
+            return (
+                'TOPUP estimates distortion from the motion-corrected b=0 and a SyNb0 '
+                'synthetic b=0, and the correction is applied.'
+            )
         return 'TOPUP estimates the susceptibility field from the b=0 images.'
     if stage.tool == 'eddy':
         if stage.role is StageRole.HMC_WITH_FIELD:
@@ -421,10 +428,15 @@ def _stage_text(grouping: DWIGrouping, selection: MethodSelection, stage) -> str
     if stage.tool == 'fieldmap':
         label = _METHOD_LABELS.get(stage.method, 'fieldmap')
         return f'A fieldmap is computed from the {label} acquisition and applied.'
-    if stage.tool == 't2wreg':
+    if stage.tool == 'unpile':
         target = 'a SyNb0 synthetic b=0' if stage.structural_target == 'synb0' else 'the T2w image'
-        return f'The b=0 is registered to {target} to estimate and correct distortion (T2Wreg).'
+        return (
+            f'unpile fits the susceptibility field by matching the b=0 to {target} with a '
+            'model of the EPI readout, and the correction is applied.'
+        )
     if stage.tool == 'syn':
+        if stage.structural_target == 'synb0':
+            return 'A fieldmap-less SyN warp to a SyNb0 synthetic b=0 is estimated and applied.'
         return 'A fieldmap-less SyN warp is estimated from the T1w and applied.'
     return f'{stage.tool} ({stage.role.value})'  # pragma: no cover - future tools
 
@@ -518,7 +530,7 @@ def _ids_by_kind(grouping, corrected) -> MethodGroups:
             kinds.pepolar.append(b0field_id)
         elif method is CorrectionMethod.SYNB0:
             kinds.synb0.append(b0field_id)
-        elif method is CorrectionMethod.T2WREG:
+        elif method is CorrectionMethod.UNPILE:
             kinds.anat.append(b0field_id)
         elif method is CorrectionMethod.NIPREPS_SYN:
             kinds.syn.append(b0field_id)
@@ -529,40 +541,107 @@ def _ids_by_kind(grouping, corrected) -> MethodGroups:
 
 def _no_sdc_sentence(grouping) -> str:
     """Definite no-correction wording for a series no estimation corrects."""
-    if grouping.policy.sdc_anat_reference != 'none':
-        # An anatomical reference was enabled but could not be used for this
-        # series (no usable anatomical image, or missing PE information).
+    if grouping.policy.sdc_anat_reference != 'none' and not grouping.policy.ignore_sdc:
+        # A fieldmap-less correction was enabled but could not be set up for
+        # this series (the grouping reported why as an error).
         return (
-            'No fieldmap could be set up (the anatomical SDC reference could '
-            'not be used for this series): susceptibility distortion is NOT '
-            'corrected.'
+            'No fieldmap could be set up (the fieldmap-less correction could not be '
+            'used for this series): susceptibility distortion is NOT corrected.'
         )
     return (
-        'No fieldmap is available and anatomical SDC is not enabled '
-        '(see --sdc-anat-reference): susceptibility distortion is NOT corrected.'
+        'No fieldmap is available and fieldmap-less SDC is disabled '
+        '(--sdc-anat-reference none): susceptibility distortion is NOT corrected.'
     )
 
 
-def _structural_phrase(grouping) -> str | None:
-    """Name the structural target registration-based stages would use."""
-    target = structural_target(grouping)
-    if target is None:
-        return None
-    kind, paths = target
-    names = ', '.join(_basename(path) for path in paths)
-    if kind == 'synb0':
-        override = ', in place of the T2w image' if grouping.anat_files('T2w') else ''
-        return f'a SyNb0 synthetic b=0 (from {names}{override})'
-    return f'the T2w image ({names})'
+def _fieldmapless_label(method: str, reference: str) -> str:
+    """A short name for a ``(--sdc-fieldmapless-method, --sdc-anat-reference)`` pair."""
+    target = {
+        'synb0': 'a SyNb0 synthetic b=0',
+        'invt1w': 'the inverted T1w',
+        't2w': 'the T2w',
+    }[reference]
+    if method == 'topup':
+        return 'SyNb0 + TOPUP'
+    if method == 'syn':
+        return f'SyN registration to {target}'
+    return f'unpile against {target}'
+
+
+def _fallback_phrase(grouping, selection) -> str:
+    """What happens to a blip group with no opposing pair on a DRBUDDI path."""
+    if _fieldmapless_fallback(grouping, selection) is None:
+        return 'they are left uncorrected (fieldmap-less SDC is disabled or has no anatomy)'
+    policy = grouping.policy
+    label = _fieldmapless_label(policy.fieldmapless_method, policy.sdc_anat_reference)
+    return f'they get the fieldmap-less correction instead ({label})'
+
+
+def _fieldmapless_after_hmc(lines, grouping, kinds, step, hmc_name, output) -> int | None:
+    """Narrate a fieldmap-less correction that runs after HMC; ``None`` if there is none."""
+    if kinds.synb0:
+        for b0field_id in kinds.synb0:
+            names = _names(grouping.estimations[b0field_id].sources)
+            lines.append(
+                f'  {step}. SyNb0 synthesizes an undistorted b=0 image from the T1w ({names}) '
+                f'and the {hmc_name}-corrected b=0; TOPUP pairs the two (the synthetic b=0 '
+                'as a zero-readout-time volume), and the resulting field is applied to '
+                f'unwarp the {output}.'
+            )
+            step += 1
+        return step
+    if kinds.syn:
+        for b0field_id in kinds.syn:
+            estimation = grouping.estimations[b0field_id]
+            names = _names(estimation.sources)
+            if estimation.reference == 'synb0':
+                lines.append(
+                    f'  {step}. SyNb0 synthesizes an undistorted b=0 image from the T1w '
+                    f'({names}); a constrained ANTs SyN registration of the b=0 to it '
+                    f'estimates a fieldmap-less warp, applied to unwarp the {output}.'
+                )
+            else:
+                lines.append(
+                    f'  {step}. A standalone fieldmap-less SyN warp is estimated by a '
+                    f'constrained ANTs registration of the T1w ({names}) to a fieldmap '
+                    f'atlas, and applied to unwarp the {output}.'
+                )
+            step += 1
+        return step
+    if kinds.anat:
+        for b0field_id in kinds.anat:
+            estimation = grouping.estimations[b0field_id]
+            names = _names(estimation.sources)
+            if estimation.reference == 'synb0':
+                lines.append(
+                    f'  {step}. SyNb0 synthesizes an undistorted b=0 image from the T1w '
+                    f'({names}) and the {hmc_name}-corrected b=0; unpile fits the '
+                    'susceptibility field by matching the b=0 to it with a model of the EPI '
+                    f'readout, and the field is applied to unwarp the {output}.'
+                )
+            else:
+                lines.append(
+                    f'  {step}. unpile fits the susceptibility field by matching the '
+                    f'{hmc_name}-corrected b=0 to the T2w ({names}) with a model of the EPI '
+                    'readout, fitting the position of the T2w at the same time, and the '
+                    f'field is applied to unwarp the {output}.'
+                )
+            step += 1
+        return step
+    return None
+
+
+def _names(paths) -> str:
+    return ', '.join(_basename(path) for path in paths)
 
 
 def _structural_note(grouping) -> str | None:
-    """DRBUDDI's multimodal --structural line, when a target exists."""
-    phrase = _structural_phrase(grouping)
-    if phrase is None:
+    """DRBUDDI's multimodal --structural line, when the subject has a T2w."""
+    t2ws = grouping.anat_files('T2w')
+    if not t2ws:
         return None
     return (
-        f'     DRBUDDI additionally uses {phrase} as a structural '
+        f'     DRBUDDI additionally uses the T2w image ({_names(t2ws)}) as a structural '
         'registration target (multimodal correction).'
     )
 
@@ -576,7 +655,7 @@ def _describe_drbuddi_pairs(
     (:attr:`~.methods.HmcCapabilities.decomposes_pepolar_pairs`), so their
     narration is identical apart from the ``pipeline`` name in the multi-pair
     note and the ``fallback`` clause for groups with no opposing blip -
-    DIFFPREP can register those to a T2w, SHORELine cannot. Returns the next
+    the fieldmap-less correction takes those on either path. Returns the next
     step number.
     """
     for b0field_id in pepolar_ids:
@@ -696,22 +775,12 @@ def _describe_eddy(lines, grouping, multipart_id, corrected, dgroups, step):
         )
         step += 1
     elif kinds.anat:
-        lines.append(
-            f'  {step}. eddy corrects head motion and eddy currents. The selected '
-            'correction is a T2w registration (T2Wreg), which only the TORTOISE '
-            'path implements: distortion is NOT corrected on this path.'
-        )
+        lines.append(f'  {step}. eddy corrects head motion and eddy currents.')
         step += 1
+        step = _fieldmapless_after_hmc(lines, grouping, kinds, step, 'eddy', 'eddy output')
     elif kinds.syn:
-        for b0field_id in kinds.syn:
-            estimation = grouping.estimations[b0field_id]
-            names = ', '.join(_basename(path) for path in estimation.sources)
-            lines.append(
-                f'  {step}. eddy corrects head motion and eddy currents; a standalone '
-                'fieldmap-less SyN warp (constrained ANTs registration of the T1w to a '
-                f'fieldmap atlas: {names}) is applied to unwarp the results.'
-            )
-            step += 1
+        lines.append(f'  {step}. eddy corrects head motion and eddy currents.')
+        step = _fieldmapless_after_hmc(lines, grouping, kinds, step + 1, 'eddy', 'results')
     else:
         lines.append(
             f'  {step}. eddy corrects head motion and eddy currents. ' + _no_sdc_sentence(grouping)
@@ -721,7 +790,7 @@ def _describe_eddy(lines, grouping, multipart_id, corrected, dgroups, step):
     return step
 
 
-def _describe_tortoise(lines, grouping, multipart_id, corrected, dgroups, step):
+def _describe_tortoise(lines, grouping, selection, multipart_id, corrected, dgroups, step):
     kinds = _ids_by_kind(grouping, corrected)
     pepolar_ids = kinds.pepolar
     gre_ids = kinds.gre
@@ -737,7 +806,7 @@ def _describe_tortoise(lines, grouping, multipart_id, corrected, dgroups, step):
     step += 1
 
     if pepolar_ids:
-        step = _describe_drbuddi_pairs(
+        return _describe_drbuddi_pairs(
             lines,
             grouping,
             multipart_id,
@@ -745,48 +814,18 @@ def _describe_tortoise(lines, grouping, multipart_id, corrected, dgroups, step):
             dgroups,
             step,
             pipeline='DIFFPREP+DRBUDDI',
-            fallback=(
-                'DIFFPREP registers them to the T2w instead (T2Wreg)'
-                if grouping.anat_files('T2w')
-                else 'they are left uncorrected (no T2w for a T2Wreg fallback)'
-            ),
+            fallback=_fallback_phrase(grouping, selection),
         )
-    elif kinds.synb0:
-        for b0field_id in kinds.synb0:
-            estimation = grouping.estimations[b0field_id]
-            t1w_names = ', '.join(_basename(path) for path in estimation.sources)
-            lines.append(
-                f'  {step}. SyNb0 synthesizes an undistorted b=0 image from the T1w '
-                f'({t1w_names}); DIFFPREP registers the data to it (T2Wreg mode) '
-                'to estimate and correct distortion.'
-            )
-            step += 1
-    elif kinds.anat:
-        for b0field_id in kinds.anat:
-            estimation = grouping.estimations[b0field_id]
-            t2w_names = ', '.join(_basename(path) for path in estimation.sources)
-            lines.append(
-                f'  {step}. DIFFPREP registers the b=0 image to the T2w '
-                f'({t2w_names}) to estimate and correct distortion (T2Wreg).'
-            )
-            step += 1
-    elif gre_ids:
+    after = _fieldmapless_after_hmc(lines, grouping, kinds, step, 'DIFFPREP', 'DIFFPREP output')
+    if after is not None:
+        return after
+    if gre_ids:
         for b0field_id in gre_ids:
             estimation = grouping.estimations[b0field_id]
             lines.append(
                 f'  {step}. A fieldmap is computed from the '
                 f'{_METHOD_LABELS[estimation.method]} acquisition and applied to '
                 'unwarp the DIFFPREP output.'
-            )
-            step += 1
-    elif kinds.syn:
-        for b0field_id in kinds.syn:
-            estimation = grouping.estimations[b0field_id]
-            t1w_names = ', '.join(_basename(path) for path in estimation.sources)
-            lines.append(
-                f'  {step}. A standalone fieldmap-less SyN warp is estimated by a '
-                f'constrained ANTs registration of the T1w ({t1w_names}) to a fieldmap '
-                'atlas, and applied to unwarp the DIFFPREP output.'
             )
             step += 1
     else:
@@ -825,7 +864,11 @@ def _describe_shoreline(lines, grouping, selection, multipart_id, corrected, dgr
             dgroups,
             step,
             pipeline='SHORELine+DRBUDDI',
-            fallback='those series are left uncorrected (SHORELine has no T2Wreg fallback)',
+            fallback=_fallback_phrase(grouping, selection),
+        )
+    elif kinds.synb0 or kinds.syn or kinds.anat:
+        step = _fieldmapless_after_hmc(
+            lines, grouping, kinds, step, 'SHORELine', 'corrected series'
         )
     elif gre_ids:
         for b0field_id in gre_ids:
@@ -836,28 +879,8 @@ def _describe_shoreline(lines, grouping, selection, multipart_id, corrected, dgr
                 'unwarp the corrected series.'
             )
             step += 1
-    elif kinds.syn:
-        for b0field_id in kinds.syn:
-            estimation = grouping.estimations[b0field_id]
-            t1w_names = ', '.join(_basename(path) for path in estimation.sources)
-            lines.append(
-                f'  {step}. A standalone fieldmap-less SyN warp is estimated by a '
-                f'constrained ANTs registration of the T1w ({t1w_names}) to a fieldmap '
-                'atlas, and applied to unwarp the corrected series.'
-            )
-            step += 1
-    elif kinds.synb0 or kinds.anat:
-        method = 'SyNb0 synthetic-b=0' if kinds.synb0 else 'T2w registration (T2Wreg)'
-        lines.append(
-            f'  {step}. The selected correction is a {method} estimation, which the '
-            'SHORELine path does not implement: distortion is NOT corrected on this path.'
-        )
-        step += 1
     else:
-        lines.append(
-            f'  {step}. No fieldmap is available: susceptibility distortion is NOT '
-            'corrected (SHORELine has no fieldmap-less fallback).'
-        )
+        lines.append(f'  {step}. ' + _no_sdc_sentence(grouping))
         step += 1
 
     return step
@@ -887,7 +910,7 @@ def _describe_eddy_drbuddi(lines, grouping, selection, multipart_id, corrected, 
             step += 1
         # The refinement stage depends on the data: DRBUDDI needs reverse
         # phase-encoded dMRI *series* (a lone reverse b=0 was already consumed
-        # by TOPUP); otherwise T2Wreg against a structural target, or nothing.
+        # by TOPUP); otherwise there is no second stage.
         all_pairs: dict = {}
         for b0field_id in pepolar_ids:
             all_pairs.update(blip_pair_polarities(grouping, grouping.estimations[b0field_id]))
@@ -902,22 +925,11 @@ def _describe_eddy_drbuddi(lines, grouping, selection, multipart_id, corrected, 
         if not refine_pairs:
             if with_topup:
                 # A lone reverse b=0 was already consumed by TOPUP and eddy's
-                # output is already unwarped, so there is no second stage on
-                # the eddy path (it has no T2Wreg stage either).
-                phrase = _structural_phrase(grouping)
-                if phrase:
-                    lines.append(
-                        f'  {step}. There is no reverse phase-encoded dMRI series '
-                        'for DRBUDDI to refine with: correction is single-stage '
-                        f'(TOPUP + eddy); {phrase} is not used (the eddy path has '
-                        'no T2Wreg stage).'
-                    )
-                else:
-                    lines.append(
-                        f'  {step}. There is no reverse phase-encoded dMRI series for '
-                        'DRBUDDI to refine with, and no T2w or synthetic b=0 for a '
-                        'T2Wreg stage: correction is single-stage (TOPUP + eddy).'
-                    )
+                # output is already unwarped, so there is no second stage.
+                lines.append(
+                    f'  {step}. There is no reverse phase-encoded dMRI series for '
+                    'DRBUDDI to refine with: correction is single-stage (TOPUP + eddy).'
+                )
                 step += 1
             elif any(len(pols) == 2 for pols in all_pairs.values()):
                 # DRBUDDI-only with the pair completed by an epi fieldmap:
@@ -932,8 +944,7 @@ def _describe_eddy_drbuddi(lines, grouping, selection, multipart_id, corrected, 
             else:
                 lines.append(
                     f'  {step}. There is no reverse phase-encoded dMRI series for '
-                    'DRBUDDI to correct with, and no T2w or synthetic b=0 for a '
-                    'T2Wreg stage: susceptibility distortion is NOT corrected.'
+                    'DRBUDDI to correct with: susceptibility distortion is NOT corrected.'
                 )
                 step += 1
         elif len(all_pairs) > 1:
@@ -988,22 +999,19 @@ def _describe_eddy_drbuddi(lines, grouping, selection, multipart_id, corrected, 
             t1w_names = ', '.join(_basename(path) for path in estimation.sources)
             lines.append(
                 f'  {step}. SyNb0 synthesizes an undistorted b=0 image from the T1w '
-                f'({t1w_names}); TOPUP treats it as a zero-readout-time volume and '
-                'eddy applies the resulting field.'
+                f'({t1w_names}); TOPUP treats it as a zero-readout-time volume, and eddy '
+                'corrects head motion, eddy currents, and susceptibility distortion in one '
+                'model using the resulting field. With no reverse phase-encoded dMRI series '
+                'the DRBUDDI second stage does not run.'
             )
             step += 1
-        lines.append(
-            f'  {step}. T2Wreg registers the eddy-corrected b=0 to the synthetic '
-            'b=0, refining the TOPUP correction.'
-        )
-        step += 1
     elif kinds.anat:
         lines.append(
-            f'  {step}. The selected correction is a T2w registration (T2Wreg), '
-            'which only the TORTOISE path implements: processing follows the FSL '
-            'path with NO distortion correction.'
+            f'  {step}. eddy corrects head motion and eddy currents. With no reverse '
+            'phase-encoded dMRI series the DRBUDDI second stage does not run.'
         )
         step += 1
+        step = _fieldmapless_after_hmc(lines, grouping, kinds, step, 'eddy', 'eddy output')
     elif kinds.gre:
         lines.append(
             f'  {step}. Without a PEPOLAR fieldmap the DRBUDDI second stage adds '
@@ -1011,9 +1019,13 @@ def _describe_eddy_drbuddi(lines, grouping, selection, multipart_id, corrected, 
         )
         step += 1
     elif kinds.syn:
+        against_synb0 = any(
+            grouping.estimations[b0field_id].reference == 'synb0' for b0field_id in kinds.syn
+        )
         lines.append(
             f'  {step}. Without a PEPOLAR fieldmap the DRBUDDI second stage adds '
-            'nothing: processing follows the FSL path with a fieldmap-less SyN warp.'
+            'nothing: processing follows the FSL path with a fieldmap-less SyN warp'
+            + (' against a SyNb0 synthetic b=0.' if against_synb0 else '.')
         )
         step += 1
     else:

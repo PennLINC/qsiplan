@@ -31,7 +31,7 @@ import dataclasses
 import enum
 
 from .methods import MethodSelection, selection_for_config
-from .models import ANAT_REFERENCE_CHOICES, GroupingPolicy
+from .models import ANAT_REFERENCE_CHOICES, FIELDMAPLESS_METHOD_CHOICES, GroupingPolicy
 from .scope import ANAT_MODELS, DEFAULT_ANAT_MODEL, SessionScope
 
 
@@ -168,8 +168,8 @@ PLAN_OPTIONS: tuple[PlanOption, ...] = (
         Kind.LIST,
         'ignore aspects of the dataset (space-delimited): '
         "'fieldmaps' skips fmap/; 'pepolar-dwis' stops pairing DWIs with each "
-        "other for PEPOLAR SDC; 't2w' drops the T2w (so no T2Wreg fieldmap-less "
-        "SDC); 'sdc' disables distortion correction; "
+        "other for PEPOLAR SDC; 't2w' drops the T2w (DRBUDDI's structural target and "
+        "unpile's reference); 'sdc' disables distortion correction; "
         "'shims' treats shim settings as compatible; 'fov' concatenates "
         'mismatched fields of view',
         members=(
@@ -195,18 +195,29 @@ PLAN_OPTIONS: tuple[PlanOption, ...] = (
         extendable=True,
     ),
     PlanOption(
+        '--sdc-fieldmapless-method',
+        Axis.POLICY,
+        Kind.CHOICE,
+        'which correction handles DWI series that no fieldmap reaches: '
+        "'topup' (the default) pairs the motion-corrected b=0 with a SyNb0 "
+        "synthetic b=0 in TOPUP; 'syn' is an ANTs SyN registration to the "
+        "--sdc-anat-reference image ('synb0' or 'invt1w'); 'unpile' fits the field "
+        'with a model of the EPI readout against the --sdc-anat-reference image '
+        "('synb0' or 't2w'), after any head motion method",
+        policy_field='fieldmapless_method',
+        choices=FIELDMAPLESS_METHOD_CHOICES,
+        default='topup',
+    ),
+    PlanOption(
         '--sdc-anat-reference',
         Axis.POLICY,
         Kind.CHOICE,
-        'which anatomical-derived image serves as the reference for '
-        'fieldmap-less SDC, used as a fallback for DWI series that no '
-        "fieldmap reaches: 'synb0' synthesizes an undistorted b=0 from the "
-        "T1w, 't2w' uses the real T2w (TORTOISE T2Wreg), 'invt1w' uses the "
-        "inverted-contrast T1w (nipreps-style SyN prior), 'auto' picks synb0 "
-        'when the subject has a T1w, else t2w when it has a T2w, else '
-        "nothing ('invt1w' is never picked automatically), and 'none' (the "
-        'default) disables anatomical SDC entirely; the engine consuming the '
-        'reference is governed by --sdc-method/--hmc-method',
+        'which anatomical-derived image the fieldmap-less correction uses: '
+        "'none' (the default) leaves series no fieldmap reaches uncorrected, "
+        "'synb0' synthesizes an undistorted b=0 from the T1w, 'invt1w' is the "
+        "inverted-contrast T1w (SyN only), 't2w' the real T2w (unpile only); "
+        'a series the selected correction cannot handle (no T1w, no '
+        'PhaseEncodingDirection or TotalReadoutTime) is an error',
         policy_field='sdc_anat_reference',
         choices=ANAT_REFERENCE_CHOICES,
         default='none',

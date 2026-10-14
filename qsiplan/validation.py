@@ -16,7 +16,7 @@ from __future__ import annotations
 import dataclasses
 from collections import defaultdict
 
-from .models import ANAT_REFERENCES, DWIGrouping, FieldmapEstimation
+from .models import DWIGrouping, FieldmapEstimation
 
 
 class GroupingError(RuntimeError):
@@ -162,7 +162,7 @@ ISSUE_CODES: dict[str, IssueSpec] = {
     ),
     'estimation-unused': _spec(
         'A curated or translated estimation corrects no DWI series (a GRE fieldmap may '
-        'still initialize DRBUDDI or T2Wreg).',
+        'still initialize DRBUDDI or unpile).',
         'warning',
     ),
     'cross-session-fieldmap-application': _spec(
@@ -177,15 +177,27 @@ ISSUE_CODES: dict[str, IssueSpec] = {
     'force-sdc-anat-reference-needs-method': _spec(
         "--force sdc-anat-reference was given with --sdc-anat-reference 'none'.", 'error'
     ),
-    'sdc-anat-reference-auto-no-anatomicals': _spec(
-        '--sdc-anat-reference auto found no T1w or T2w for some series; no anatomical SDC.',
-        'warning',
+    'fieldmapless-combination-invalid': _spec(
+        '--sdc-fieldmapless-method cannot use the selected --sdc-anat-reference.', 'error'
     ),
-    'synb0-requires-t1w': _spec('SyNb0 was requested but the subject has no T1w.', 'error'),
+    'synb0-requires-t1w': _spec(
+        'A SyNb0 synthetic b=0 is needed but the subject has no T1w.', 'error'
+    ),
     'synb0-missing-pedir': _spec(
-        'SyNb0 was requested for series with no PhaseEncodingDirection.', 'error'
+        'SyNb0 + TOPUP is needed for series with no PhaseEncodingDirection.', 'error'
     ),
-    't2wreg-requires-t2w': _spec('T2Wreg was requested but the subject has no T2w.', 'error'),
+    'synb0-missing-readout': _spec(
+        'SyNb0 + TOPUP is needed for series with no TotalReadoutTime.', 'error'
+    ),
+    'unpile-requires-t2w': _spec(
+        'The T2w reference was requested but the subject has no T2w.', 'error'
+    ),
+    'unpile-missing-pedir': _spec(
+        'unpile was requested for series with no PhaseEncodingDirection.', 'error'
+    ),
+    'unpile-missing-readout': _spec(
+        'unpile was requested for series with no TotalReadoutTime.', 'error'
+    ),
     'syn-requires-t1w': _spec('SyN-SDC was requested but the subject has no T1w.', 'error'),
     'syn-missing-pedir': _spec(
         'SyN-SDC was requested for series with no PhaseEncodingDirection.', 'error'
@@ -237,12 +249,7 @@ ISSUE_CODES: dict[str, IssueSpec] = {
     ),
     # ---- plan feasibility (per method selection) ----------------------------
     'no-sdc': _spec(
-        'An output has no fieldmap and no anatomical SDC method enabled; not corrected.',
-        'warning',
-    ),
-    'anat-sdc-unsupported': _spec(
-        'A T2Wreg estimation is requested on a path that cannot run it (TORTOISE only).',
-        'error',
+        'An output has no fieldmap and no fieldmap-less correction requested; not corrected.',
         'warning',
     ),
     'mixed-non-pepolar': _spec(
@@ -355,24 +362,6 @@ def dwi_blip_pairs(grouping: DWIGrouping, estimation: FieldmapEstimation) -> lis
             sig = record.signature
             polarities[(sig.pe_axis, sig.readout_time, sig.shim)].add(sig.pe_polarity)
     return sorted((key for key, pols in polarities.items() if len(pols) == 2), key=blip_sort_key)
-
-
-def structural_target(grouping: DWIGrouping) -> tuple[str, list[str]] | None:
-    """The structural image registration-based stages should use.
-
-    Returns ``(kind, paths)`` where kind is ``'synb0'`` (a synthetic
-    undistorted b=0 from the T1w - preferred when SyNb0 was requested, even
-    over a real T2w, since its contrast matches the b=0 exactly) or ``'t2w'``;
-    ``None`` when neither is available.
-    """
-    synb0, t2w = ANAT_REFERENCES['synb0'], ANAT_REFERENCES['t2w']
-    t1ws = grouping.anat_files(synb0.source_suffix)
-    if grouping.synb0_requested and t1ws:
-        return synb0.structural_target, t1ws
-    t2ws = grouping.anat_files(t2w.source_suffix)
-    if t2ws:
-        return t2w.structural_target, t2ws
-    return None
 
 
 #: Maximum b-values within one output may differ by this much before warning.

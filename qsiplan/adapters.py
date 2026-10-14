@@ -61,7 +61,13 @@ class PreprocUnit:
 
     @property
     def method(self) -> CorrectionMethod | None:
-        return self.estimation.method if self.estimation else None
+        if self.estimation is not None:
+            return self.estimation.method
+        # An unpaired blip group split off a PEPOLAR unit has no estimation of its
+        # own; its plan stage carries the fieldmap-less fallback's method.
+        if self.run is not None:
+            return next((stage.method for stage in self.run.stages if stage.method), None)
+        return None
 
     @property
     def dwi_records(self) -> tuple[FileRecord, ...]:
@@ -92,9 +98,9 @@ class PreprocUnit:
         return self.method in _GRE_SUFFIX
 
     @property
-    def using_t2w_for_sdc(self) -> bool:
-        """True for fieldmap-less TORTOISE T2Wreg: register the b=0 to a T2w."""
-        return self.method is CorrectionMethod.T2WREG
+    def is_unpile(self) -> bool:
+        """True for the fieldmap-less unpile fit (explicit only): b=0 to a SyNb0 or the T2w."""
+        return self.method is CorrectionMethod.UNPILE
 
     @property
     def is_nipreps_syn(self) -> bool:
@@ -106,7 +112,7 @@ class PreprocUnit:
         """True when a field the scanner measured (PEPOLAR or GRE) corrects these series.
 
         Distinguishes the real-fieldmap methods from the fieldmap-less ones
-        (T2Wreg, SyNb0) and the uncorrected case.
+        (SyNb0, unpile, SyN) and the uncorrected case.
         """
         return self.is_pepolar or self.is_gre
 
@@ -119,7 +125,7 @@ class PreprocUnit:
         fieldmap, the grouping applies one method (PEPOLAR -> DRBUDDI) and keeps
         the other in ``application_candidates``. This returns that GRE candidate
         (lowest ``b0field_id`` when several), so DRBUDDI can be seeded with a
-        GRE-derived warp the way T2Wreg already is. ``None`` when the applied
+        GRE-derived warp and unpile can refine the GRE field. ``None`` when the applied
         correction is itself GRE (already the estimation) or no GRE candidate
         exists.
         """
@@ -271,13 +277,13 @@ def _decomposes_pepolar_pairs(
     opposite polarity - at a time, so methods that route PEPOLAR through it
     (:attr:`~.methods.HmcCapabilities.decomposes_pepolar_pairs`: DIFFPREP and
     SHORELine) handle each of a unit's blip groups on its own: a complete pair
-    to DRBUDDI, an unpaired group to the fieldmap-less fallback (DIFFPREP T2Wreg
-    with a T2w, else HMC-only). Decompose whenever the unit spans more than one
-    blip group, or any of its groups is unpaired; a lone complete pair stays one
-    DRBUDDI unit. Completeness is judged against the estimation, so a borrowed
-    opposite blip still counts. eddy keeps the pooled unit (TOPUP pools the
-    groups). The fact comes from the capability table, never from a backend
-    name.
+    to DRBUDDI, an unpaired group to the policy's fieldmap-less correction
+    (SyNb0 + TOPUP after HMC by default; HMC-only with ``--sdc-anat-reference
+    none``). Decompose whenever the unit spans more than one blip group, or any
+    of its groups is unpaired; a lone complete pair stays one DRBUDDI unit.
+    Completeness is judged against the estimation, so a borrowed opposite blip
+    still counts. eddy keeps the pooled unit (TOPUP pools the groups). The fact
+    comes from the capability table, never from a backend name.
     """
     if (
         not HMC_CAPABILITIES[selection.hmc].decomposes_pepolar_pairs
@@ -319,8 +325,8 @@ def _decompose_unit(
     """One PreprocUnit per blip group of a PEPOLAR unit.
 
     A complete pair keeps DRBUDDI (PEPOLAR, estimation restricted to that pair);
-    an unpaired group becomes fieldmap-less (``estimation=None``) so DIFFPREP
-    falls back to T2Wreg with a T2w, or leaves it uncorrected. Names come from
+    an unpaired group becomes fieldmap-less (``estimation=None``) and gets the
+    plan's fieldmap-less stage, or none when that correction is off. Names come from
     each group's files, kept as-is where already distinct (e.g. ``acq-``/``run-``
     that differs by readout) and disambiguated by axis - then a per-axis index -
     only where the pooled names would collide (two groups differing only in

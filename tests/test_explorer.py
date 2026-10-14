@@ -59,37 +59,38 @@ def test_combined_key_composes_both_axes():
 def test_reachable_policies_cover_the_grid():
     policies = reachable_policies()
     # separate + ignore(fieldmaps, pepolar-dwis, t2w, shims, fov)
-    # + anat-sdc (reference, forced) pairs(9) + merge(3)
-    assert len(policies) == 2 * 2 * 2 * 2 * 2 * 2 * 9 * 3
+    # + fieldmap-less SDC: 'none' plus the 5 (method, reference) pairs, each
+    # fallback or forced (11) + merge(3)
+    assert len(policies) == 2 * 2 * 2 * 2 * 2 * 2 * 11 * 3
     keys = {policy.policy_key() for policy in policies}
     assert len(keys) == len(policies)  # every combination spells uniquely
     assert '' in keys  # the all-defaults policy
-    anat_pairs = {(p.sdc_anat_reference, p.force_sdc_anat_reference) for p in policies}
-    # 'none' is never forced (nothing to force); 'auto' is a first-class value,
-    # fallback and forced, because it resolves per session and so can produce a
-    # grouping distinct from any single concrete method.
-    assert ('none', True) not in anat_pairs
-    assert ('auto', False) in anat_pairs
-    assert ('auto', True) in anat_pairs
+    anat = {
+        (p.fieldmapless_method, p.sdc_anat_reference, p.force_sdc_anat_reference) for p in policies
+    }
+    # 'none' is never forced (nothing to force); invalid pairs never appear.
+    assert not any(reference == 'none' and forced for _, reference, forced in anat)
+    assert ('topup', 'invt1w', False) not in anat
+    assert ('syn', 'synb0', True) in anat
+    assert ('unpile', 't2w', False) in anat
 
 
-def test_auto_initial_policy_renders_and_is_reachable(tmp_path):
-    """Regression: '--sdc-anat-reference auto' used to KeyError in the explorer
-    (auto was excluded from the grid); it is now a first-class grid cell."""
-    records, issues = _indexed('fieldmapless_t2w', tmp_path)  # has a T1w -> auto = synb0
-    auto = GroupingPolicy(sdc_anat_reference='auto')
+def test_none_initial_policy_renders_and_is_reachable(tmp_path):
+    """The default (fieldmap-less SDC off) and a forced SynB0 are grid cells the
+    static page can open on."""
+    records, issues = _indexed('fieldmapless_t2w', tmp_path)
+    off = GroupingPolicy()
 
-    grid = build_policy_grid(records, '01', base=auto, index_issues=issues)
-    assert auto.policy_key() in grid.policy_index
-    forced_auto = GroupingPolicy(sdc_anat_reference='auto', force_sdc_anat_reference=True)
-    assert forced_auto.policy_key() in grid.policy_index
+    grid = build_policy_grid(records, '01', base=off, index_issues=issues)
+    assert off.policy_key() in grid.policy_index
+    forced = GroupingPolicy(sdc_anat_reference='synb0', force_sdc_anat_reference=True)
+    assert forced.policy_key() in grid.policy_index
 
-    # The static page (the --html / --cohort-html sibling path) renders, opens
-    # on auto's grouping, and offers 'auto' in the policy dropdown.
-    page = render_explorer_html(records, '01', index_issues=issues, initial_policy=auto)
-    assert '<option value="sdc-anat-reference=auto"' in page
+    page = render_explorer_html(records, '01', index_issues=issues, initial_policy=off)
+    assert '<option value="sdc-anat-reference=synb0"' in page
     index = _embedded_index(page)
-    assert index['policies']['sdc-anat-reference=auto']['sig'] is not None
+    assert index['policies']['sdc-anat-reference=synb0']['sig'] is not None
+    assert index['policies']['sdc-anat-reference=synb0']['sig'] != index['policies']['']['sig']
 
 
 def test_cli_phrase_composes_ignore_as_one_flag():
@@ -110,10 +111,13 @@ def test_cli_phrase_composes_ignore_as_one_flag():
     )
     # The anatomical-SDC flags stay separate and real (never folded into --ignore).
     assert (
-        GroupingPolicy(sdc_anat_reference='invt1w').cli_phrase() == '--sdc-anat-reference invt1w'
+        GroupingPolicy(fieldmapless_method='syn', sdc_anat_reference='invt1w').cli_phrase()
+        == '--sdc-fieldmapless-method syn --sdc-anat-reference invt1w'
     )
-    forced = GroupingPolicy(sdc_anat_reference='t2w', force_sdc_anat_reference=True)
-    assert forced.cli_phrase() == '--sdc-anat-reference t2w --force sdc-anat-reference'
+    assert GroupingPolicy(sdc_anat_reference='synb0').cli_phrase() == '--sdc-anat-reference synb0'
+    assert GroupingPolicy().cli_phrase() == ''
+    forced = GroupingPolicy(force_sdc_anat_reference=True)
+    assert forced.cli_phrase() == '--force sdc-anat-reference'
 
 
 def test_noop_toggle_collapses_by_content(tmp_path):
@@ -223,8 +227,11 @@ def test_explorer_page_embeds_the_factored_index(tmp_path):
     # --sdc-anat-reference select offers every method plus its forced variant
     # (a composite option value carrying both canonical key parts).
     assert 'class="ignore-group"' in page
-    assert 'value="sdc-anat-reference=invt1w"' in page
-    assert 'value="sdc-anat-reference=t2w&force-sdc-anat-reference=1"' in page
+    assert 'value="fieldmapless-method=syn&sdc-anat-reference=invt1w"' in page
+    assert (
+        'value="fieldmapless-method=unpile&sdc-anat-reference=t2w&force-sdc-anat-reference=1"'
+        in page
+    )
     assert 'class="grouping-view"' in page
     assert 'class="grouping-notes"' in page
 
@@ -260,8 +267,8 @@ def test_explorer_preserves_fixed_ignore_sdc_policy(tmp_path):
 
 
 def test_explorer_canonicalizes_force_without_method(tmp_path):
-    """force_sdc_anat_reference without a method resolves to the plain policy."""
-    policy = GroupingPolicy(force_sdc_anat_reference=True)
+    """force_sdc_anat_reference with fieldmap-less SDC off resolves to the plain policy."""
+    policy = GroupingPolicy(sdc_anat_reference='none', force_sdc_anat_reference=True)
     records, issues = _indexed('fieldmapless_t2w', tmp_path)
     page = render_explorer_html(
         records,
@@ -270,7 +277,7 @@ def test_explorer_canonicalizes_force_without_method(tmp_path):
         initial_policy=policy,
     )
     index = _embedded_index(page)
-    assert '' in index['policies']
+    assert '' in index['policies']  # the plain default
     assert policy.policy_key() not in index['policies']
 
 

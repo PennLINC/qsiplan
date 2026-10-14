@@ -1,6 +1,6 @@
 # Curated anatomical-registration SDC: the T2w carries a B0FieldIdentifier
 # and the DWI names it as its B0FieldSource. Expected: a CURATED
-# ANAT_CONTRAST estimation; tortoise executes T2Wreg; fsl/mixed raise an
+# ANAT_CONTRAST estimation; tortoise executes unpile; fsl/mixed raise an
 # error because the user explicitly demanded a method those paths lack.
 '01':
   - anat:

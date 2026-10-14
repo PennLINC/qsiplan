@@ -2,7 +2,7 @@
 # estimation wins (a real fieldmap always beats fieldmap-less), and the
 # tortoise/mixed previews note DRBUDDI's multimodal use of the T2w as a
 # structural target. With sdc_anat_reference='t2w', force_sdc_anat_reference=True: a FORCED
-# T2Wreg estimation overrides the PEPOLAR pairing for every series.
+# unpile estimation overrides the PEPOLAR pairing for every series.
 '01':
   - anat:
       - suffix: T1w

@@ -35,7 +35,7 @@ def test_session_slice_collapses_equivalent_sessions(tmp_path):
 
 
 def test_t2w_changes_the_signature(tmp_path):
-    """A T2w gives registration-based SDC a structural target: distinct signature."""
+    """A T2w gives DRBUDDI a structural target: distinct signature."""
     sel = selection_for_config('tortoise', 'drbuddi')
     with_t2w = load_scenario('t2w_hcp', tmp_path / 'a', strict=False)
     without = load_scenario('hcp_style', tmp_path / 'b', strict=False)

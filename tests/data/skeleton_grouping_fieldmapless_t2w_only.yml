@@ -1,8 +1,8 @@
 # A single DWI series with no fieldmap and only a T2w (no T1w). Expected by
-# default: no correction at all (anatomical SDC is opt-in). With
-# sdc_anat_reference='auto': the T2w rung of the auto ladder gives it an INFERRED
-# T2Wreg estimation, which the tortoise preview states definitely and the
-# fsl preview warns it cannot execute.
+# default: an error, since the default SyNb0 + TOPUP needs a T1w (the message
+# points to --sdc-anat-reference none). With --sdc-fieldmapless-method unpile
+# and sdc_anat_reference='t2w': a unpile estimation, which the tortoise preview
+# states and the fsl preview refuses.
 '01':
   - anat:
       - suffix: T2w

@@ -1,8 +1,8 @@
 # A single DWI series with no fieldmap of any kind, but the subject has a
-# T1w and a T2w. Expected by default: no correction at all (anatomical SDC
-# is opt-in; there is no automatic T2w fallback). With sdc_anat_reference='auto': the
-# T1w wins the ladder and an INFERRED SyNb0 estimation corrects it. With
-# sdc_anat_reference='t2w': a FORCED T2Wreg estimation corrects it instead.
+# T1w and a T2w. Expected by default: an INFERRED SyNb0 + TOPUP estimation from
+# the T1w (the T2w does not bring unpile in). With sdc_anat_reference='none': no
+# correction. With --sdc-fieldmapless-method unpile and sdc_anat_reference='t2w':
+# a unpile estimation corrects it instead.
 '01':
   - anat:
       - suffix: T1w

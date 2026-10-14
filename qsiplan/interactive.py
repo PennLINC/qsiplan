@@ -32,7 +32,7 @@ import html
 from .bids import find_bval, find_bvec
 from .metadata import B0_THRESHOLD, read_bvals_bvecs
 from .methods import reachable_selections
-from .models import ANAT_REFERENCES, CorrectionMethod, DWIGrouping, GroupingPolicy, Provenance
+from .models import FIELDMAPLESS_METHODS, CorrectionMethod, DWIGrouping, GroupingPolicy, Provenance
 from .plan import compile_plan
 from .report import processing_steps, shell_label
 from .validation import describe_issue
@@ -73,10 +73,10 @@ _METHOD_EXPLANATIONS = {
         'No fieldmap was acquired: a synthetic undistorted b=0 is generated '
         'from the T1w and used as the missing opposite-blip image.',
     ),
-    CorrectionMethod.T2WREG: (
-        'Registration to T2w (T2Wreg)',
-        'No fieldmap was acquired: the b=0 is registered to the undistorted '
-        'T2w image to estimate the distortion.',
+    CorrectionMethod.UNPILE: (
+        'unpile fieldmap-less',
+        'No fieldmap was acquired: unpile fits the field by matching the b=0 '
+        'to a synthetic b=0 or the T2w with a model of the EPI readout.',
     ),
     CorrectionMethod.NIPREPS_SYN: (
         'Fieldmap-less SyN',
@@ -563,7 +563,7 @@ def _estimation_cards(
         if eid in applied:
             unused = ''
         elif grouping.initializes_only(eid):
-            unused = ' <span class="unused">(initializes DRBUDDI/T2Wreg)</span>'
+            unused = ' <span class="unused">(initializes DRBUDDI/unpile)</span>'
         else:
             unused = ' <span class="unused">(not used)</span>'
         parts.append(
@@ -960,9 +960,10 @@ def _policy_controls(policy: GroupingPolicy) -> str:
     The layout follows qsiprep's real CLI: the grouping-related ``--ignore``
     values (``fieldmaps``/``shims``/``fov``) are checkboxes grouped under one
     ``--ignore`` flag - it takes a space-delimited list, not one flag per
-    value - and the anatomical-SDC axis is one ``--sdc-anat-reference`` select whose
-    forced entries compose two flags (``--sdc-anat-reference t2w --force sdc-anat-reference``),
-    so their option values carry both canonical key parts joined with ``&``.
+    value - and the fieldmap-less SDC axis is one select over the valid
+    ``--sdc-fieldmapless-method``/``--sdc-anat-reference`` pairs (plus the forced
+    variants and ``none``), whose option values carry each pair's non-default
+    canonical key parts joined with ``&``.
     """
 
     def box(part, label, checked):
@@ -974,18 +975,26 @@ def _policy_controls(policy: GroupingPolicy) -> str:
     def option(value, label, selected):
         return f'<option value="{value}"{" selected" if selected else ""}>{label}</option>'
 
-    sdc_anat_reference = policy.sdc_anat_reference if policy.sdc_anat_reference != 'none' else ''
-    forced = bool(sdc_anat_reference) and policy.force_sdc_anat_reference
+    current = (
+        policy.fieldmapless_method,
+        policy.sdc_anat_reference,
+        policy.force_sdc_anat_reference,
+    )
+    defaults = GroupingPolicy()
 
-    def anat_option(method):
-        value = f'sdc-anat-reference={method}'
-        label = f'--sdc-anat-reference {method}'
-        selected = sdc_anat_reference == method and not forced
-        markup = option(value, label, selected)
-        forced_label = f'{label} --force sdc-anat-reference'
-        forced_selected = sdc_anat_reference == method and forced
-        markup += option(f'{value}&force-sdc-anat-reference=1', forced_label, forced_selected)
-        return markup
+    def anat_option(method, reference, forced):
+        parts, flags = [], []
+        if method != defaults.fieldmapless_method:
+            parts.append(f'fieldmapless-method={method}')
+            flags.append(f'--sdc-fieldmapless-method {method}')
+        if reference != defaults.sdc_anat_reference:
+            parts.append(f'sdc-anat-reference={reference}')
+            flags.append(f'--sdc-anat-reference {reference}')
+        if forced:
+            parts.append('force-sdc-anat-reference=1')
+            flags.append('--force sdc-anat-reference')
+        label = ' '.join(flags) or f'{method} + {reference} (default)'
+        return option('&'.join(parts), label, current == (method, reference, forced))
 
     ignore_group = (
         '<span class="ignore-group"><span class="flag-name">--ignore</span>'
@@ -1001,10 +1010,20 @@ def _policy_controls(policy: GroupingPolicy) -> str:
         '<div class="plan-controls policy-controls">'
         + box('separate-all-dwis=1', '--separate-all-dwis', policy.separate_all_dwis)
         + ignore_group
-        + '<label>--sdc-anat-reference <select class="ctl-policy">'
-        + option('', 'none', not sdc_anat_reference)
-        + anat_option('auto')
-        + ''.join(anat_option(name) for name in ANAT_REFERENCES)
+        + '<label>fieldmap-less SDC <select class="ctl-policy">'
+        + option(
+            '' if defaults.sdc_anat_reference == 'none' else 'sdc-anat-reference=none',
+            'fieldmap-less SDC off (default)'
+            if defaults.sdc_anat_reference == 'none'
+            else '--sdc-anat-reference none',
+            policy.sdc_anat_reference == 'none',
+        )
+        + ''.join(
+            anat_option(method.name, reference, forced)
+            for forced in (False, True)
+            for method in FIELDMAPLESS_METHODS.values()
+            for reference in method.references
+        )
         + '</select></label>'
         + '<label>--distortion-group-merge <select class="ctl-policy">'
         + option('', 'concat', merge == 'concat')

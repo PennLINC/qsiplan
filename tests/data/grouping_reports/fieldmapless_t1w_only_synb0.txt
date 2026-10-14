@@ -4,10 +4,10 @@ DWI grouping for sub-01
 Output "sub-01_dir-AP" (MultipartID auto+concat+0 [inferred]): 1 series
   Distortion group sub-01_dir-AP (PE j-, TRT 0.05s):
     - sub-01_dir-AP_dwi.nii.gz
-    corrected by: auto+synb0 [cli-override]
+    corrected by: auto+synb0 [inferred]
 
 Fieldmap estimations:
-  auto+synb0 [cli-override]: SyNb0 synthetic b=0
+  auto+synb0 [inferred]: SyNb0 synthetic b=0
     - sub-01_T1w.nii.gz
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
@@ -26,7 +26,7 @@ Processing preview: TORTOISE + DRBUDDI (--hmc-method tortoise --sdc-method drbud
 Output "sub-01_dir-AP" (1 single series):
   1. The series is denoised.
   2. TORTOISE DIFFPREP corrects head motion and eddy currents.
-  3. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); DIFFPREP registers the data to it (T2Wreg mode) to estimate and correct distortion.
+  3. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the DIFFPREP-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the DIFFPREP output.
   4. The corrected series is written as one output file.
 
 Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup+drbuddi)
@@ -34,9 +34,8 @@ Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup
 
 Output "sub-01_dir-AP" (1 single series):
   1. The series is denoised.
-  2. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume and eddy applies the resulting field.
-  3. T2Wreg registers the eddy-corrected b=0 to the synthetic b=0, refining the TOPUP correction.
-  4. The corrected series is written as one output file.
+  2. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume, and eddy corrects head motion, eddy currents, and susceptibility distortion in one model using the resulting field. With no reverse phase-encoded dMRI series the DRBUDDI second stage does not run.
+  3. The corrected series is written as one output file.
 
 Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
 -------------------------------------------------------------------------------------
@@ -44,5 +43,5 @@ Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drb
 Output "sub-01_dir-AP" (1 single series):
   1. The series is denoised.
   2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  3. The selected correction is a SyNb0 synthetic-b=0 estimation, which the SHORELine path does not implement: distortion is NOT corrected on this path.
+  3. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the SHORELine-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the corrected series.
   4. The corrected series is written as one output file.

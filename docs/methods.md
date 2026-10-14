@@ -62,13 +62,24 @@ TOPUP with `eddy`, DRBUDDI otherwise. Mismatched explicit
 combinations, such as `tortoise` with `topup`, are accepted by the parser;
 feasibility is the compiler's job and is reported in the preview.
 
+## Fieldmap-less methods
+
+`--sdc-fieldmapless-method` picks the correction for series no fieldmap
+reaches (see {doc}`concepts`); `topup` (SyNb0 + TOPUP) is the default
+method, and it runs only once `--sdc-anat-reference` names an image. Each
+method accepts some of the anatomical references below and raises the listed
+issue codes when a target series lacks the metadata it needs.
+
+```{eval-rst}
+.. qsiplan-fieldmapless-methods::
+```
+
 ## Anatomical SDC references
 
-`--sdc-anat-reference` picks which anatomical-derived image may drive
-fieldmap-less SDC, as a fallback for series no fieldmap reaches (see
-{doc}`concepts`). `none` and `auto` are handled around this table; `auto`
-walks the rows by rank, lowest first, and takes the first whose anatomical
-image the session has.
+`--sdc-anat-reference` picks the anatomical-derived image the fieldmap-less
+method uses and turns the correction on. `none`, the default, is handled
+around this table: it leaves series no fieldmap reaches uncorrected, with a
+`no-sdc` warning naming the flag.
 
 ```{eval-rst}
 .. qsiplan-anat-references::

@@ -519,7 +519,7 @@ def index_subject(
     """Build a :class:`~.models.FileRecord` for every relevant image.
 
     Indexes the subject's dwi/ series, fmap/ files, and the anatomical images
-    that can drive fieldmap-less correction (T1w for SyNb0, T2w for T2Wreg).
+    that can drive fieldmap-less correction (T1w for SyNb0, T2w for unpile).
     Whether anatomical processing actually runs (``--anat-modality none``) is
     a workflow concern applied downstream, not here.
 
@@ -543,7 +543,7 @@ def index_subject(
         PEPOLAR heuristic still applies downstream.
     ignore_t2w : bool
         Skip T2w indexing entirely (``--ignore t2w``), so no T2w is available
-        for T2Wreg fieldmap-less correction. T1w indexing is unaffected.
+        as the fieldmap-less correction's reference. T1w indexing is unaffected.
     """
     issues: list[GroupingIssue] = []
     dwi_files = [op.abspath(path) for path in subject_data.get('dwi', [])]

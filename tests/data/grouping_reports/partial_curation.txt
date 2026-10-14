@@ -26,7 +26,7 @@ Fieldmap estimations:
     phase encoding axes: j (bidirectional)
 
 Notes:
-  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz, sub-01_dir-PA_run-2_dwi.nii.gz: this subject has fieldmaps linked by B0FieldIdentifier/B0FieldSource or IntendedFor, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series. Add B0FieldIdentifier/B0FieldSource to correct them (fieldmap-less correction can still be requested at the command line).
+  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz, sub-01_dir-PA_run-2_dwi.nii.gz: this subject has fieldmaps linked by B0FieldIdentifier/B0FieldSource or IntendedFor, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series; only a fieldmap-less correction (--sdc-anat-reference) reaches them. Add B0FieldIdentifier/B0FieldSource to pair them.
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 -----------------------------------------------------------------------
@@ -39,15 +39,15 @@ Output "sub-01_run-1" (2 series):
 
 Output "sub-01_dir-AP_run-2" (1 single series):
   1. The series is denoised.
-  2. eddy corrects head motion and eddy currents. No fieldmap is available and anatomical SDC is not enabled (see --sdc-anat-reference): susceptibility distortion is NOT corrected.
+  2. eddy corrects head motion and eddy currents. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   3. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Output "sub-01_dir-PA_run-2" (1 single series):
   1. The series is denoised.
-  2. eddy corrects head motion and eddy currents. No fieldmap is available and anatomical SDC is not enabled (see --sdc-anat-reference): susceptibility distortion is NOT corrected.
+  2. eddy corrects head motion and eddy currents. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   3. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Processing preview: TORTOISE + DRBUDDI (--hmc-method tortoise --sdc-method drbuddi)
 -----------------------------------------------------------------------------------
@@ -61,16 +61,16 @@ Output "sub-01_run-1" (2 series):
 Output "sub-01_dir-AP_run-2" (1 single series):
   1. The series is denoised.
   2. TORTOISE DIFFPREP corrects head motion and eddy currents.
-  3. No fieldmap is available and anatomical SDC is not enabled (see --sdc-anat-reference): susceptibility distortion is NOT corrected.
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   4. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Output "sub-01_dir-PA_run-2" (1 single series):
   1. The series is denoised.
   2. TORTOISE DIFFPREP corrects head motion and eddy currents.
-  3. No fieldmap is available and anatomical SDC is not enabled (see --sdc-anat-reference): susceptibility distortion is NOT corrected.
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   4. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup+drbuddi)
 ---------------------------------------------------------------------------------------
@@ -84,15 +84,15 @@ Output "sub-01_run-1" (2 series):
 
 Output "sub-01_dir-AP_run-2" (1 single series):
   1. The series is denoised.
-  2. No fieldmap is available and anatomical SDC is not enabled (see --sdc-anat-reference): susceptibility distortion is NOT corrected.
+  2. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   3. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Output "sub-01_dir-PA_run-2" (1 single series):
   1. The series is denoised.
-  2. No fieldmap is available and anatomical SDC is not enabled (see --sdc-anat-reference): susceptibility distortion is NOT corrected.
+  2. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   3. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
 -------------------------------------------------------------------------------------
@@ -106,13 +106,13 @@ Output "sub-01_run-1" (2 series):
 Output "sub-01_dir-AP_run-2" (1 single series):
   1. The series is denoised.
   2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  3. No fieldmap is available: susceptibility distortion is NOT corrected (SHORELine has no fieldmap-less fallback).
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   4. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Output "sub-01_dir-PA_run-2" (1 single series):
   1. The series is denoised.
   2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  3. No fieldmap is available: susceptibility distortion is NOT corrected (SHORELine has no fieldmap-less fallback).
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
   4. The corrected series is written as one output file.
-  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no anatomical SDC method was enabled for it (see --sdc-anat-reference): no susceptibility distortion correction will be performed.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).

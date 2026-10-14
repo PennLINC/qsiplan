@@ -4,10 +4,10 @@ DWI grouping for sub-01
 Output "sub-01_dir-AP" (MultipartID auto+concat+0 [inferred]): 1 series
   Distortion group sub-01_dir-AP (PE j-, TRT 0.05s):
     - sub-01_dir-AP_dwi.nii.gz
-    corrected by: auto+syn [cli-override]
+    corrected by: auto+syn [inferred]
 
 Fieldmap estimations:
-  auto+syn [cli-override]: fieldmap-less SyN
+  auto+syn [inferred]: fieldmap-less SyN
     - sub-01_T1w.nii.gz
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
@@ -15,8 +15,9 @@ Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 
 Output "sub-01_dir-AP" (1 single series):
   1. The series is denoised.
-  2. eddy corrects head motion and eddy currents; a standalone fieldmap-less SyN warp (constrained ANTs registration of the T1w to a fieldmap atlas: sub-01_T1w.nii.gz) is applied to unwarp the results.
-  3. The corrected series is written as one output file.
+  2. eddy corrects head motion and eddy currents.
+  3. A standalone fieldmap-less SyN warp is estimated by a constrained ANTs registration of the T1w (sub-01_T1w.nii.gz) to a fieldmap atlas, and applied to unwarp the results.
+  4. The corrected series is written as one output file.
 
 Processing preview: TORTOISE + DRBUDDI (--hmc-method tortoise --sdc-method drbuddi)
 -----------------------------------------------------------------------------------

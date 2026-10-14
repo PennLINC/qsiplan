@@ -208,10 +208,10 @@ def test_single_unit_acq_output_exposes_multipartid_label(tmp_path):
 
 def test_partial_pair_routes_pair_and_singleton(tmp_path):
     """TORTOISE routes each blip group on its own: the matched pair to DRBUDDI,
-    the unmatched singleton to the fieldmap-less fallback (estimation dropped, so
-    the workflow does T2Wreg with a T2w). Both concatenate into one output.
+    the unmatched singleton to the fieldmap-less fallback (estimation dropped; the
+    plan gives it SyNb0 + TOPUP after DIFFPREP). Both concatenate into one output.
     """
-    grouping = load_scenario('partial_pair', tmp_path, strict=False)
+    grouping = load_scenario('partial_pair', tmp_path, strict=False, sdc_anat_reference='synb0')
 
     units = {unit.output_name: unit for unit in to_preproc_units(grouping, TORTOISE_DRBUDDI)}
     assert set(units) == {'sub-01_acq-fast', 'sub-01_acq-slow_dir-AP'}
@@ -221,8 +221,11 @@ def test_partial_pair_routes_pair_and_singleton(tmp_path):
     assert pair.has_bidirectional_dwi
 
     singleton = units['sub-01_acq-slow_dir-AP']
-    assert singleton.estimation is None  # fieldmap-less -> T2Wreg / HMC-only
+    assert singleton.estimation is None
     assert not singleton.has_scanner_measured_fieldmap
+    # The fallback's method comes from the unit's plan stage.
+    assert singleton.method is CorrectionMethod.SYNB0
+    assert singleton.run.stage_with('topup').structural_target == 'synb0'
 
     assert set(concatenation_scheme(grouping, TORTOISE_DRBUDDI).values()) == {'sub-01'}
     # FSL keeps the single pooled unit.
@@ -303,24 +306,28 @@ def test_gre_phasediff_shape(tmp_path):
     assert isinstance(unit.metadata_for(unit.gre_files()['phasediff']), dict)
 
 
-def test_t2wreg_is_fieldmapless(tmp_path):
-    """T2Wreg is fieldmap-less; SDC is driven by the t2wreg plan stage elsewhere."""
-    (unit,) = _units('fieldmapless_t2w', tmp_path, sdc_anat_reference='t2w')
-    assert unit.using_t2w_for_sdc
+def test_unpile_is_fieldmapless(tmp_path):
+    """unpile is fieldmap-less; SDC is driven by the unpile plan stage elsewhere."""
+    (unit,) = _units(
+        'fieldmapless_t2w', tmp_path, fieldmapless_method='unpile', sdc_anat_reference='t2w'
+    )
+    assert unit.is_unpile
     assert not unit.has_scanner_measured_fieldmap
     assert unit.dwi_files
 
 
 def test_uncorrected_units_have_no_method(tmp_path):
     """A series with no fieldmap has no estimation and no method."""
-    units = _units('missing_pedir', tmp_path)
+    units = _units('missing_pedir', tmp_path, sdc_anat_reference='none')
     assert units
     assert all(unit.estimation is None and unit.method is None for unit in units)
 
 
 def test_syn_unit_shape(tmp_path):
     """SyN units expose is_nipreps_syn and no scanner-measured fieldmap."""
-    (unit,) = _units('fieldmapless_t1w_only', tmp_path, sdc_anat_reference='invt1w')
+    (unit,) = _units(
+        'fieldmapless_t1w_only', tmp_path, fieldmapless_method='syn', sdc_anat_reference='invt1w'
+    )
     assert unit.is_nipreps_syn
     assert not unit.has_scanner_measured_fieldmap
 

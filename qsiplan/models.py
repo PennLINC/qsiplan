@@ -65,7 +65,7 @@ class CorrectionMethod(enum.StrEnum):
     PHASEDIFF = 'phasediff'  # phase difference + magnitude(s)
     PHASES = 'two_phases'  # phase1 + phase2 + magnitude(s)
     SYNB0 = 'synb0'  # fieldmap-less: synthetic undistorted b=0 from the T1w
-    T2WREG = 'anat_reg'  # fieldmap-less: b=0 registration to a T2w (T2Wreg)
+    UNPILE = 'unpile'  # fieldmap-less: unpile fits the readout model to a SyNb0 or the T2w
     NIPREPS_SYN = 'syn'  # fieldmap-less: ANTs SyN registration to a template (classic)
 
 
@@ -77,110 +77,151 @@ GRE_METHODS = frozenset(
 
 @dataclasses.dataclass(frozen=True)
 class AnatReference:
-    """One anatomical-derived source image ``--sdc-anat-reference`` can select.
+    """One anatomical-derived image ``--sdc-anat-reference`` can select.
 
-    The single description of a fieldmap-less SDC reference. Every place that
-    spells the reference set - the CLI choices, the key parser, the explorer
-    grid and dropdown, the inference ladder and its error messages, and the
-    structural-target vocabulary - derives from :data:`ANAT_REFERENCES`, so
-    adding a reference is one row here and cannot be forgotten elsewhere.
+    The image a fieldmap-less correction registers to or synthesizes from;
+    which correction uses it is a :class:`FieldmaplessMethod`. Every place
+    that spells the reference set (the CLI choices, the key parser, the
+    explorer grid and dropdown, the inference error messages and the
+    structural-target vocabulary) derives from :data:`ANAT_REFERENCES`.
     """
 
     #: The ``--sdc-anat-reference`` value (``'synb0'``).
     name: str
-    #: The estimation method the reference produces.
-    method: CorrectionMethod
     #: The anatomical image it needs (``'T1w'`` / ``'T2w'``).
     source_suffix: str
-    #: The estimation-id stem (``auto+<id_stem>[+ses-<label>]``).
-    id_stem: str
     #: The target-kind name registration-based plan stages carry.
     structural_target: str
-    #: ``(code, message)`` for target series lacking a PhaseEncodingDirection,
-    #: or ``None`` when the reference is a pure registration and needs none.
-    pedir_issue: tuple[str, str] | None
     #: ``(code, message)`` when the subject lacks ``source_suffix``.
     missing_anat_issue: tuple[str, str]
-    #: Position in the ``'auto'`` ladder (lower wins); ``None`` = explicit only.
-    auto_rank: int | None
     #: Help-text fragment.
     description: str
 
 
-#: The concrete references, in ``'auto'``-ladder order. ``'none'`` and
-#: ``'auto'`` are meta-values handled around this table, never rows in it.
+#: The concrete references. ``'none'`` is a meta-value handled around this table.
 ANAT_REFERENCES: dict[str, AnatReference] = {
     reference.name: reference
     for reference in (
         AnatReference(
             name='synb0',
-            method=CorrectionMethod.SYNB0,
             source_suffix='T1w',
-            id_stem='synb0',
             structural_target='synb0',
-            pedir_issue=(
-                'synb0-missing-pedir',
-                'SyNb0 was requested, but these DWI series have no '
-                'PhaseEncodingDirection, which the synthetic-b=0 correction '
-                'requires.',
-            ),
             missing_anat_issue=(
                 'synb0-requires-t1w',
-                'SyNb0 was requested, but this subject has no T1w image to '
-                'synthesize an undistorted b=0 from.',
+                'The fieldmap-less correction needs a SyNb0 synthetic b=0, but this '
+                'subject has no T1w image to synthesize it from. Pass '
+                '--sdc-anat-reference none to leave these series uncorrected.',
             ),
-            auto_rank=1,
-            description='synthesizes an undistorted b=0 from the T1w',
-        ),
-        AnatReference(
-            name='t2w',
-            method=CorrectionMethod.T2WREG,
-            source_suffix='T2w',
-            id_stem='t2wreg',
-            structural_target='t2w',
-            # T2Wreg is a registration, not a correction along an encoding
-            # axis, so it needs no PhaseEncodingDirection.
-            pedir_issue=None,
-            missing_anat_issue=(
-                't2wreg-requires-t2w',
-                'T2w-registration SDC (T2Wreg) was requested, but this subject has no T2w image.',
-            ),
-            auto_rank=2,
-            description='uses the real T2w (TORTOISE T2Wreg)',
+            description='synthesizes an undistorted b=0 from the T1w (SyNb0)',
         ),
         AnatReference(
             name='invt1w',
-            method=CorrectionMethod.NIPREPS_SYN,
             source_suffix='T1w',
-            id_stem='syn',
             structural_target='t1w',
+            missing_anat_issue=(
+                'syn-requires-t1w',
+                'SyN-SDC with the inverted T1w was requested, but this subject has no T1w image.',
+            ),
+            description='uses the inverted-contrast T1w (nipreps-style SyN prior)',
+        ),
+        AnatReference(
+            name='t2w',
+            source_suffix='T2w',
+            structural_target='t2w',
+            missing_anat_issue=(
+                'unpile-requires-t2w',
+                'The T2w reference was requested, but this subject has no T2w image.',
+            ),
+            description='uses the real T2w',
+        ),
+    )
+}
+
+#: Everything ``--sdc-anat-reference`` accepts: ``'none'`` plus the table.
+ANAT_REFERENCE_CHOICES: tuple[str, ...] = ('none', *ANAT_REFERENCES)
+
+
+@dataclasses.dataclass(frozen=True)
+class FieldmaplessMethod:
+    """One fieldmap-less correction ``--sdc-fieldmapless-method`` can select."""
+
+    #: The ``--sdc-fieldmapless-method`` value (``'topup'``).
+    name: str
+    #: The estimation method it produces.
+    method: CorrectionMethod
+    #: The ``--sdc-anat-reference`` values it accepts.
+    references: tuple[str, ...]
+    #: The estimation-id stem per reference (``auto+<id_stem>[+ses-<label>]``).
+    id_stems: dict[str, str]
+    #: ``(code, message)`` for target series lacking a PhaseEncodingDirection,
+    #: or ``None`` when the correction is a pure registration and needs none.
+    pedir_issue: tuple[str, str] | None
+    #: ``(code, message)`` for target series lacking a TotalReadoutTime, or
+    #: ``None`` when the correction does not convert a field to displacement.
+    readout_issue: tuple[str, str] | None
+    #: Help-text fragment.
+    description: str
+
+
+#: The fieldmap-less corrections. ``'topup'`` (SyNb0 + TOPUP) is the default.
+FIELDMAPLESS_METHODS: dict[str, FieldmaplessMethod] = {
+    method.name: method
+    for method in (
+        FieldmaplessMethod(
+            name='topup',
+            method=CorrectionMethod.SYNB0,
+            references=('synb0',),
+            id_stems={'synb0': 'synb0'},
+            pedir_issue=(
+                'synb0-missing-pedir',
+                'SyNb0 + TOPUP needs a PhaseEncodingDirection on these DWI series. Pass '
+                '--sdc-anat-reference none to leave them uncorrected.',
+            ),
+            readout_issue=(
+                'synb0-missing-readout',
+                'SyNb0 + TOPUP needs a TotalReadoutTime on these DWI series. Pass '
+                '--sdc-anat-reference none to leave them uncorrected.',
+            ),
+            description='TOPUP with a SyNb0 synthetic undistorted b=0',
+        ),
+        FieldmaplessMethod(
+            name='syn',
+            method=CorrectionMethod.NIPREPS_SYN,
+            references=('synb0', 'invt1w'),
+            id_stems={'invt1w': 'syn', 'synb0': 'synsynb0'},
             pedir_issue=(
                 'syn-missing-pedir',
                 'SyN-SDC was requested, but these DWI series have no '
                 'PhaseEncodingDirection, which the fieldmap-less SyN correction '
                 'requires.',
             ),
-            missing_anat_issue=(
-                'syn-requires-t1w',
-                'SyN-SDC was requested, but this subject has no T1w image to '
-                'register against a template.',
+            readout_issue=None,
+            description='ANTs SyN registration restricted to the phase-encoding axis',
+        ),
+        FieldmaplessMethod(
+            name='unpile',
+            method=CorrectionMethod.UNPILE,
+            references=('synb0', 't2w'),
+            id_stems={'synb0': 'unpilesynb0', 't2w': 'unpile'},
+            pedir_issue=(
+                'unpile-missing-pedir',
+                'unpile needs a PhaseEncodingDirection on these DWI series. Pass '
+                '--sdc-anat-reference none to leave them uncorrected.',
             ),
-            auto_rank=None,
-            description='uses the inverted-contrast T1w (nipreps-style SyN prior)',
+            readout_issue=(
+                'unpile-missing-readout',
+                'unpile needs a TotalReadoutTime on these DWI series. Pass '
+                '--sdc-anat-reference none to leave them uncorrected.',
+            ),
+            description=(
+                'unpile (experimental), a readout-model fit of the b=0 to a SyNb0 or the T2w'
+            ),
         ),
     )
 }
 
-#: Everything ``--sdc-anat-reference`` accepts: the meta-values plus the table.
-ANAT_REFERENCE_CHOICES: tuple[str, ...] = ('none', 'auto', *ANAT_REFERENCES)
-
-#: The references ``'auto'`` may pick, best first.
-AUTO_ANAT_REFERENCES: tuple[AnatReference, ...] = tuple(
-    sorted(
-        (reference for reference in ANAT_REFERENCES.values() if reference.auto_rank is not None),
-        key=lambda reference: reference.auto_rank,
-    )
-)
+#: Everything ``--sdc-fieldmapless-method`` accepts.
+FIELDMAPLESS_METHOD_CHOICES: tuple[str, ...] = tuple(FIELDMAPLESS_METHODS)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -370,6 +411,14 @@ class FieldmapEstimation:
     # Derived from EPI-like sources (empty for GRE methods):
     pe_axes: frozenset[str] = frozenset()
     bidirectional_axes: frozenset[str] = frozenset()
+    # The ANAT_REFERENCES name a fieldmap-less estimation registers to or
+    # synthesizes from (None for measured fieldmaps).
+    reference: str | None = None
+
+    @property
+    def structural_target(self) -> str | None:
+        """The target-kind name of :attr:`reference` (``'synb0'``, ``'t1w'``, ``'t2w'``)."""
+        return ANAT_REFERENCES[self.reference].structural_target if self.reference else None
 
     @property
     def is_pepolar(self) -> bool:
@@ -446,7 +495,8 @@ class ConcatenationGroup:
 
 #: Version of the ``DWIGrouping.to_dict`` JSON layout; bump on incompatible
 #: shape changes. 2: per-file ``part``/``phase_path`` (complex-valued DWI).
-SCHEMA_VERSION = 2
+#: 3: per-estimation ``reference``; ``policy.fieldmapless_method``.
+SCHEMA_VERSION = 3
 
 
 @dataclasses.dataclass(frozen=True)
@@ -458,13 +508,15 @@ class GroupingPolicy:
     software processes the grouped data) is :class:`~.methods.MethodSelection`;
     :func:`~.methods.combined_key` composes the two into one canonical key.
 
-    The anatomical (fieldmap-less) SDC axis is two orthogonal fields:
-    ``sdc_anat_reference`` selects which anatomical-derived source image may drive it
-    (``'none'``, ``'auto'``, ``'synb0'``, ``'t2w'``, or ``'invt1w'`` - the
-    inverted-contrast T1w) as a *fallback* for series no fieldmap reaches,
-    and ``force_sdc_anat_reference`` escalates the selected method to an *override*
-    that replaces the fieldmap application for every series (meaningless
-    with ``sdc_anat_reference='none'``).
+    The anatomical (fieldmap-less) SDC axis is three fields:
+    ``fieldmapless_method`` selects the correction (``'topup'``, the default
+    SyNb0 + TOPUP; ``'syn'``; or ``'unpile'``),
+    ``sdc_anat_reference`` the anatomical-derived image it uses (``'synb0'``,
+    the default; ``'invt1w'``, the inverted-contrast T1w; ``'t2w'``; or
+    ``'none'``, which disables fieldmap-less SDC) as a *fallback* for series
+    no fieldmap reaches, and ``force_sdc_anat_reference`` escalates it to an
+    *override* that replaces the fieldmap application for every series
+    (meaningless with ``sdc_anat_reference='none'``).
     """
 
     separate_all_dwis: bool = False
@@ -475,6 +527,7 @@ class GroupingPolicy:
     ignore_fov: bool = False
     ignore_sdc: bool = False
     sdc_anat_reference: str = 'none'
+    fieldmapless_method: str = 'topup'
     force_sdc_anat_reference: bool = False
     distortion_group_merge: str = 'concat'
 
@@ -525,6 +578,8 @@ class GroupingPolicy:
         ]
         if ignored:
             flags.append('--ignore ' + ' '.join(ignored))
+        if self.fieldmapless_method != 'topup':
+            flags.append(f'--sdc-fieldmapless-method {self.fieldmapless_method}')
         if self.sdc_anat_reference != 'none':
             flags.append(f'--sdc-anat-reference {self.sdc_anat_reference}')
         force_members = (('sdc-anat-reference', self.force_sdc_anat_reference),)
@@ -588,7 +643,8 @@ class DWIGrouping:
 
     def initializes_only(self, b0field_id: str) -> bool:
         """True for a GRE estimation that lists DWI series but corrects none: it
-        can only start another correction's registration (DRBUDDI or T2Wreg)."""
+        can only start another correction's registration (DRBUDDI) or serve
+        as unpile's prior."""
         return (
             self.estimations[b0field_id].is_gre
             and b0field_id not in set(self.application.values())
@@ -669,6 +725,7 @@ class DWIGrouping:
                     'provenance': est.provenance.value,
                     'pe_axes': sorted(est.pe_axes),
                     'bidirectional_axes': sorted(est.bidirectional_axes),
+                    'reference': est.reference,
                 }
                 for b0field_id, est in sorted(self.estimations.items())
             },

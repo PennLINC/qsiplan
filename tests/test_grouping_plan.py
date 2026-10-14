@@ -21,11 +21,25 @@ from qsiplan.plan import ExecutionPlan, StageRole, compile_plan
 
 #: (scenario, build kwargs) - every scenario plain, plus the golden flag variants.
 CASES = [(scenario, {}) for scenario in SCENARIOS] + [
-    ('fieldmapless_t1w_only', {'sdc_anat_reference': 'invt1w'}),
+    ('fieldmapless_t1w_only', {'fieldmapless_method': 'syn', 'sdc_anat_reference': 'invt1w'}),
     ('fieldmapless_t1w_only', {'sdc_anat_reference': 'synb0'}),
     ('t2w_hcp', {'sdc_anat_reference': 'synb0', 'force_sdc_anat_reference': True}),
-    ('curated_t2wreg', {'sdc_anat_reference': 't2w', 'force_sdc_anat_reference': True}),
-    ('t2w_hcp', {'sdc_anat_reference': 'invt1w', 'force_sdc_anat_reference': True}),
+    (
+        'curated_unpile',
+        {
+            'fieldmapless_method': 'unpile',
+            'sdc_anat_reference': 't2w',
+            'force_sdc_anat_reference': True,
+        },
+    ),
+    (
+        't2w_hcp',
+        {
+            'fieldmapless_method': 'syn',
+            'sdc_anat_reference': 'invt1w',
+            'force_sdc_anat_reference': True,
+        },
+    ),
 ]
 
 #: The eddy/TORTOISE preview selections every case is compiled under.
@@ -189,18 +203,36 @@ def test_gre_fieldmap_estimates_after_hmc(tmp_path):
     ), stages
 
 
-def test_tortoise_t2wreg_fallback_stage(tmp_path):
-    plan = _plan_for(tmp_path, 'fieldmapless_t2w', 'tortoise', 'drbuddi', sdc_anat_reference='t2w')
+def test_tortoise_unpile_fallback_stage(tmp_path):
+    plan = _plan_for(
+        tmp_path,
+        'fieldmapless_t2w',
+        'tortoise',
+        'drbuddi',
+        fieldmapless_method='unpile',
+        sdc_anat_reference='t2w',
+    )
     (run,) = plan.runs
-    assert _role_tool(run) == [('hmc', 'tortoise'), ('estimate+apply', 't2wreg')]
+    assert _role_tool(run) == [('hmc', 'tortoise'), ('estimate+apply', 'unpile')]
     assert run.stages[1].structural_target == 't2w'
 
 
-def test_eddy_cannot_run_t2wreg(tmp_path):
-    plan = _plan_for(tmp_path, 'fieldmapless_t2w', 'eddy', 'topup', sdc_anat_reference='t2w')
+@pytest.mark.parametrize(
+    ('hmc', 'sdc'), [('eddy', 'topup'), ('eddy', 'topup+drbuddi'), ('shoreline', 'drbuddi')]
+)
+def test_every_hmc_method_runs_unpile_after_hmc(tmp_path, hmc, sdc):
+    plan = _plan_for(
+        tmp_path,
+        'fieldmapless_t2w',
+        hmc,
+        sdc,
+        fieldmapless_method='unpile',
+        sdc_anat_reference='t2w',
+    )
     (run,) = plan.runs
-    assert _role_tool(run) == [('hmc', 'eddy')]
-    assert any(issue.code == 'anat-sdc-unsupported' for issue in plan.issues)
+    assert _role_tool(run) == [('hmc', hmc), ('estimate+apply', 'unpile')]
+    assert run.stages[1].structural_target == 't2w'
+    assert not [issue for issue in plan.issues if issue.severity == 'error']
 
 
 def test_synb0_prefers_synthetic_target_on_tortoise(tmp_path):
@@ -215,7 +247,7 @@ def test_synb0_prefers_synthetic_target_on_tortoise(tmp_path):
         stage.structural_target
         for run in plan.runs
         for stage in run.stages
-        if stage.tool == 't2wreg'
+        if stage.tool == 'unpile'
     }
     assert targets in (set(), {'synb0'})
 
@@ -242,16 +274,63 @@ def test_synb0_topup_drbuddi_never_refines(tmp_path):
     assert _role_tool(run) == [('estimate', 'topup'), ('hmc-with-field', 'eddy')]
 
 
-@pytest.mark.parametrize(('hmc', 'sdc'), [('eddy', 'drbuddi'), ('shoreline', 'drbuddi')])
-def test_synb0_without_a_consumer_stays_uncorrected(tmp_path, hmc, sdc):
-    plan = _plan_for(tmp_path, 'fieldmapless_t1w_only', hmc, sdc, sdc_anat_reference='synb0')
+@pytest.mark.parametrize(
+    ('hmc', 'sdc', 'stages'),
+    [
+        ('eddy', 'topup', [('estimate', 'topup'), ('hmc-with-field', 'eddy')]),
+        # --sdc-method picks the PEPOLAR tools; SyNb0 + TOPUP runs regardless
+        ('eddy', 'drbuddi', [('estimate', 'topup'), ('hmc-with-field', 'eddy')]),
+        ('tortoise', 'drbuddi', [('hmc', 'tortoise'), ('estimate+apply', 'topup')]),
+        ('shoreline', 'drbuddi', [('hmc', 'shoreline'), ('estimate+apply', 'topup')]),
+    ],
+)
+@pytest.mark.parametrize('scenario', ['fieldmapless_t1w_only', 'fieldmapless_t2w'])
+def test_synb0_topup_runs_for_every_hmc(tmp_path, scenario, hmc, sdc, stages):
+    # The default method once a reference is named; a T2w on disk does not bring
+    # unpile in, that takes --sdc-fieldmapless-method unpile.
+    plan = _plan_for(tmp_path, scenario, hmc, sdc, sdc_anat_reference='synb0')
     (run,) = plan.runs
-    assert _role_tool(run) == [('hmc', hmc)]
+    assert _role_tool(run) == stages
+    assert all(stage.tool != 'unpile' for stage in run.stages)
+
+
+def test_syn_stage_targets_synb0(tmp_path):
+    plan = _plan_for(
+        tmp_path,
+        'fieldmapless_t1w_only',
+        'tortoise',
+        'drbuddi',
+        fieldmapless_method='syn',
+        sdc_anat_reference='synb0',
+    )
+    (run,) = plan.runs
+    assert _role_tool(run) == [('hmc', 'tortoise'), ('estimate+apply', 'syn')]
+    assert run.stages[1].structural_target == 'synb0'
+
+
+@pytest.mark.parametrize(('reference', 'target'), [('t2w', 't2w'), ('synb0', 'synb0')])
+def test_unpile_stage_targets_its_reference(tmp_path, reference, target):
+    plan = _plan_for(
+        tmp_path,
+        'fieldmapless_t2w',
+        'tortoise',
+        'drbuddi',
+        fieldmapless_method='unpile',
+        sdc_anat_reference=reference,
+    )
+    (run,) = plan.runs
+    assert _role_tool(run) == [('hmc', 'tortoise'), ('estimate+apply', 'unpile')]
+    assert run.stages[1].structural_target == target
 
 
 def test_syn_stage_targets_t1w(tmp_path):
     plan = _plan_for(
-        tmp_path, 'fieldmapless_t1w_only', 'eddy', 'topup', sdc_anat_reference='invt1w'
+        tmp_path,
+        'fieldmapless_t1w_only',
+        'eddy',
+        'topup',
+        fieldmapless_method='syn',
+        sdc_anat_reference='invt1w',
     )
     (run,) = plan.runs
     assert _role_tool(run) == [('hmc', 'eddy'), ('estimate+apply', 'syn')]
@@ -298,20 +377,31 @@ def test_gre_unit_with_two_encodings_runs_once_per_encoding(tmp_path, hmc, sdc):
 )
 def test_forced_syn_over_a_reverse_pe_pair_runs_once_per_encoding(tmp_path, hmc, sdc):
     plan = _plan_for(
-        tmp_path, 't2w_hcp', hmc, sdc, sdc_anat_reference='invt1w', force_sdc_anat_reference=True
+        tmp_path,
+        't2w_hcp',
+        hmc,
+        sdc,
+        fieldmapless_method='syn',
+        sdc_anat_reference='invt1w',
+        force_sdc_anat_reference=True,
     )
     assert len(plan.runs) == 2
     assert all(run.stage_with('syn') is not None for run in plan.runs)
 
 
-def test_forced_synb0_splits_for_t2wreg_but_not_for_topup(tmp_path):
-    """T2Wreg builds one warp per run; TOPUP applies its field per volume."""
+def test_forced_synb0_splits_after_diffprep_but_not_under_eddy(tmp_path):
+    """Post-DIFFPREP TOPUP builds one warp per run; eddy applies TOPUP's field per volume."""
     kwargs = {'sdc_anat_reference': 'synb0', 'force_sdc_anat_reference': True}
     tortoise = _plan_for(tmp_path / 'tortoise', 't2w_hcp', 'tortoise', 'drbuddi', **kwargs)
     assert len(tortoise.runs) == 2
-    assert all(run.stage_with('t2wreg') is not None for run in tortoise.runs)
+    for run in tortoise.runs:
+        topup = run.stage_with('topup')
+        assert topup is not None
+        assert topup.role is StageRole.ESTIMATE_AND_APPLY
+        assert topup.structural_target == 'synb0'
+        assert run.stage_with('unpile') is None
     (eddy_run,) = _plan_for(tmp_path / 'eddy', 't2w_hcp', 'eddy', 'topup', **kwargs).runs
-    assert eddy_run.stage_with('topup') is not None
+    assert eddy_run.stage_with('topup').role is StageRole.ESTIMATE
 
 
 def test_plan_serialization_shape(tmp_path):
