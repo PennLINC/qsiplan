@@ -51,7 +51,7 @@ def test_choices_are_none_plus_the_tables():
     assert ANAT_REFERENCE_CHOICES == ('none', *ANAT_REFERENCES)
     assert FIELDMAPLESS_METHOD_CHOICES == tuple(FIELDMAPLESS_METHODS)
     assert GroupingPolicy().fieldmapless_method == 'topup'
-    assert GroupingPolicy().sdc_anat_reference == 'synb0'
+    assert GroupingPolicy().sdc_anat_reference == 'none'
 
 
 def test_every_reference_is_used_by_some_method():
@@ -95,15 +95,14 @@ def test_pair_is_in_the_explorer_grid_fallback_and_forced(pair):
 def test_every_pair_is_offered_in_the_dropdown(tmp_path):
     grouping = load_scenario('fieldmapless_t2w', tmp_path, strict=False)
     page = render_explorer_html(list(grouping.files.values()), '01')
-    assert '<option value="sdc-anat-reference=none"' in page
+    assert '<option value=""' in page
+    assert 'fieldmap-less SDC off (default)</option>' in page
     for method, reference in PAIRS:
         flags = []
         if method.name != 'topup':
             flags.append(f'--sdc-fieldmapless-method {method.name}')
-        if reference.name != 'synb0':
-            flags.append(f'--sdc-anat-reference {reference.name}')
-        label = ' '.join(flags) or 'topup + synb0 (default)'
-        assert f'>{label}</option>' in page
+        flags.append(f'--sdc-anat-reference {reference.name}')
+        assert f'>{" ".join(flags)}</option>' in page
 
 
 @pytest.mark.parametrize('pair', PAIRS, ids=_pair_id)
@@ -183,7 +182,7 @@ def test_topup_needs_a_readout_time(tmp_path):
         else record
         for record in grouping.files.values()
     ]
-    regrouped = build_grouping(records, subject_id='01')
+    regrouped = build_grouping(records, subject_id='01', sdc_anat_reference='synb0')
     assert 'synb0-missing-readout' in _codes(regrouped.errors)
     assert not regrouped.estimations
 

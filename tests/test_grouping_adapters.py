@@ -211,7 +211,7 @@ def test_partial_pair_routes_pair_and_singleton(tmp_path):
     the unmatched singleton to the fieldmap-less fallback (estimation dropped; the
     plan gives it SyNb0 + TOPUP after DIFFPREP). Both concatenate into one output.
     """
-    grouping = load_scenario('partial_pair', tmp_path, strict=False)
+    grouping = load_scenario('partial_pair', tmp_path, strict=False, sdc_anat_reference='synb0')
 
     units = {unit.output_name: unit for unit in to_preproc_units(grouping, TORTOISE_DRBUDDI)}
     assert set(units) == {'sub-01_acq-fast', 'sub-01_acq-slow_dir-AP'}

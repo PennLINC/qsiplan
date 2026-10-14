@@ -1,86 +1,118 @@
 DWI grouping for sub-01
 =======================
 
-Output "sub-01" (MultipartID auto+concat+0 [inferred]): 4 series
+Output "sub-01_run-1" (MultipartID auto+concat+0 [inferred]): 2 series
   Distortion group sub-01_dir-AP_run-1 (PE j-, TRT 0.05s):
     - sub-01_dir-AP_run-1_dwi.nii.gz
     corrected by: pepolar01 [curated]
-  Distortion group sub-01_dir-AP_run-2 (PE j-, TRT 0.05s):
-    - sub-01_dir-AP_run-2_dwi.nii.gz
-    corrected by: auto+synb0 [inferred]
   Distortion group sub-01_dir-PA_run-1 (PE j, TRT 0.05s):
     - sub-01_dir-PA_run-1_dwi.nii.gz
     corrected by: pepolar01 [curated]
+
+Output "sub-01_dir-AP_run-2" (MultipartID auto+concat+1 [inferred]): 1 series
+  Distortion group sub-01_dir-AP_run-2 (PE j-, TRT 0.05s):
+    - sub-01_dir-AP_run-2_dwi.nii.gz
+    corrected by: nothing (no fieldmap found)
+
+Output "sub-01_dir-PA_run-2" (MultipartID auto+concat+2 [inferred]): 1 series
   Distortion group sub-01_dir-PA_run-2 (PE j, TRT 0.05s):
     - sub-01_dir-PA_run-2_dwi.nii.gz
-    corrected by: auto+synb0 [inferred]
+    corrected by: nothing (no fieldmap found)
 
 Fieldmap estimations:
-  auto+synb0 [inferred]: SyNb0 synthetic b=0
-    - sub-01_T1w.nii.gz
   pepolar01 [curated]: PEPOLAR (reverse phase-encoding)
     - sub-01_dir-AP_run-1_dwi.nii.gz
     - sub-01_dir-PA_run-1_dwi.nii.gz
     phase encoding axes: j (bidirectional)
 
 Notes:
-  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz, sub-01_dir-PA_run-2_dwi.nii.gz: this subject has fieldmaps linked by B0FieldIdentifier/B0FieldSource or IntendedFor, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series; they get the fieldmap-less correction instead. Add B0FieldIdentifier/B0FieldSource to pair them.
+  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz, sub-01_dir-PA_run-2_dwi.nii.gz: this subject has fieldmaps linked by B0FieldIdentifier/B0FieldSource or IntendedFor, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series; only a fieldmap-less correction (--sdc-anat-reference) reaches them. Add B0FieldIdentifier/B0FieldSource to pair them.
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 -----------------------------------------------------------------------
 
-Output "sub-01" (4 series):
-  1. Each series is denoised on its own. The 4 series span 2 correction units; each unit is concatenated and corrected in its own pipeline.
-  2. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
-  3. TOPUP estimates the susceptibility field from b=0 images spanning 2 distortion groups (2 rows in the acquisition-parameters file).
-  4. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field. Every volume is assigned to its distortion group in the eddy index file.
-  5. Correction unit 'sub-01_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz, sub-01_dir-PA_run-2_dwi.nii.gz):
-  6. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz).
-  7. TOPUP estimates the susceptibility field from the acquired b=0 images plus the synthetic b=0, which enters as a zero-readout-time volume (an extra row in the acquisition-parameters file).
-  8. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field.
-  9. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
+Output "sub-01_run-1" (2 series):
+  1. Each series is denoised on its own, then all 2 series are concatenated.
+  2. TOPUP estimates the susceptibility field from b=0 images spanning 2 distortion groups (2 rows in the acquisition-parameters file).
+  3. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field. Every volume is assigned to its distortion group in the eddy index file.
+  4. The corrected series is written as one output file.
+
+Output "sub-01_dir-AP_run-2" (1 single series):
+  1. The series is denoised.
+  2. eddy corrects head motion and eddy currents. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  3. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
+
+Output "sub-01_dir-PA_run-2" (1 single series):
+  1. The series is denoised.
+  2. eddy corrects head motion and eddy currents. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  3. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Processing preview: TORTOISE + DRBUDDI (--hmc-method tortoise --sdc-method drbuddi)
 -----------------------------------------------------------------------------------
 
-Output "sub-01" (4 series):
-  1. Each series is denoised on its own. The 4 series run in 3 pipelines: a correction built as one warp for one phase encoding runs once per encoding.
-  2. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
-  3. TORTOISE DIFFPREP corrects head motion and eddy currents separately for each distortion group (sub-01_dir-AP_run-1, sub-01_dir-PA_run-1).
-  4. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_dir-PA_run-1) and blip-down (sub-01_dir-AP_run-1) data and applies the correction to every volume.
-  5. Phase encoding 'sub-01_dir-AP_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz):
-  6. TORTOISE DIFFPREP corrects head motion and eddy currents.
-  7. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the DIFFPREP-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the DIFFPREP output.
-  8. Phase encoding 'sub-01_dir-PA_run-2' (sub-01_dir-PA_run-2_dwi.nii.gz):
-  9. TORTOISE DIFFPREP corrects head motion and eddy currents.
-  10. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the DIFFPREP-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the DIFFPREP output.
-  11. The corrected results of the 3 pipelines are resampled onto one grid and concatenated into one output file.
+Output "sub-01_run-1" (2 series):
+  1. Each series is denoised on its own, then all 2 series are concatenated.
+  2. TORTOISE DIFFPREP corrects head motion and eddy currents separately for each distortion group (sub-01_dir-AP_run-1, sub-01_dir-PA_run-1).
+  3. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_dir-PA_run-1) and blip-down (sub-01_dir-AP_run-1) data and applies the correction to every volume.
+  4. The corrected series is written as one output file.
+
+Output "sub-01_dir-AP_run-2" (1 single series):
+  1. The series is denoised.
+  2. TORTOISE DIFFPREP corrects head motion and eddy currents.
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  4. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
+
+Output "sub-01_dir-PA_run-2" (1 single series):
+  1. The series is denoised.
+  2. TORTOISE DIFFPREP corrects head motion and eddy currents.
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  4. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup+drbuddi)
 ---------------------------------------------------------------------------------------
 
-Output "sub-01" (4 series):
-  1. Each series is denoised on its own. The 4 series span 2 correction units; each unit is concatenated and corrected in its own pipeline.
-  2. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
-  3. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
-  4. eddy corrects head motion and eddy currents using the TOPUP field.
-  5. DRBUDDI re-estimates distortion along the j axis from the eddy-corrected blip-up/blip-down dMRI series, refining the TOPUP correction.
-  6. Correction unit 'sub-01_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz, sub-01_dir-PA_run-2_dwi.nii.gz):
-  7. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume, and eddy corrects head motion, eddy currents, and susceptibility distortion in one model using the resulting field. With no reverse phase-encoded dMRI series the DRBUDDI second stage does not run.
-  8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
+Output "sub-01_run-1" (2 series):
+  1. Each series is denoised on its own, then all 2 series are concatenated.
+  2. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
+  3. eddy corrects head motion and eddy currents using the TOPUP field.
+  4. DRBUDDI re-estimates distortion along the j axis from the eddy-corrected blip-up/blip-down dMRI series, refining the TOPUP correction.
+  5. The corrected series is written as one output file.
+
+Output "sub-01_dir-AP_run-2" (1 single series):
+  1. The series is denoised.
+  2. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  3. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
+
+Output "sub-01_dir-PA_run-2" (1 single series):
+  1. The series is denoised.
+  2. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  3. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
 
 Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
 -------------------------------------------------------------------------------------
 
-Output "sub-01" (4 series):
-  1. Each series is denoised on its own. The 4 series run in 3 pipelines: a correction built as one warp for one phase encoding runs once per encoding.
-  2. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
-  3. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  4. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_dir-PA_run-1) and blip-down (sub-01_dir-AP_run-1) data and applies the correction to every volume.
-  5. Phase encoding 'sub-01_dir-AP_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz):
-  6. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  7. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the SHORELine-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the corrected series.
-  8. Phase encoding 'sub-01_dir-PA_run-2' (sub-01_dir-PA_run-2_dwi.nii.gz):
-  9. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  10. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the SHORELine-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the corrected series.
-  11. The corrected results of the 3 pipelines are resampled onto one grid and concatenated into one output file.
+Output "sub-01_run-1" (2 series):
+  1. Each series is denoised on its own, then all 2 series are concatenated.
+  2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
+  3. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_dir-PA_run-1) and blip-down (sub-01_dir-AP_run-1) data and applies the correction to every volume.
+  4. The corrected series is written as one output file.
+
+Output "sub-01_dir-AP_run-2" (1 single series):
+  1. The series is denoised.
+  2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  4. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).
+
+Output "sub-01_dir-PA_run-2" (1 single series):
+  1. The series is denoised.
+  2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
+  3. No fieldmap is available and fieldmap-less SDC is disabled (--sdc-anat-reference none): susceptibility distortion is NOT corrected.
+  4. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-PA_run-2' has no fieldmap and no fieldmap-less correction was requested: no susceptibility distortion correction will be performed. Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 from the T1w (SynB0 + TOPUP).

@@ -1011,16 +1011,18 @@ def _policy_controls(policy: GroupingPolicy) -> str:
         + box('separate-all-dwis=1', '--separate-all-dwis', policy.separate_all_dwis)
         + ignore_group
         + '<label>fieldmap-less SDC <select class="ctl-policy">'
+        + option(
+            '' if defaults.sdc_anat_reference == 'none' else 'sdc-anat-reference=none',
+            'fieldmap-less SDC off (default)'
+            if defaults.sdc_anat_reference == 'none'
+            else '--sdc-anat-reference none',
+            policy.sdc_anat_reference == 'none',
+        )
         + ''.join(
             anat_option(method.name, reference, forced)
             for forced in (False, True)
             for method in FIELDMAPLESS_METHODS.values()
             for reference in method.references
-        )
-        + option(
-            'sdc-anat-reference=none',
-            '--sdc-anat-reference none',
-            policy.sdc_anat_reference == 'none',
         )
         + '</select></label>'
         + '<label>--distortion-group-merge <select class="ctl-policy">'

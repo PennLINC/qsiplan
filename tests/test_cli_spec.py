@@ -85,7 +85,7 @@ def test_policy_from_namespace_tolerates_missing_flags():
     )
     policy = policy_from_namespace(namespace)
     assert policy == GroupingPolicy(separate_all_dwis=True, ignore_fieldmaps=True)
-    assert policy.sdc_anat_reference == 'synb0'
+    assert policy.sdc_anat_reference == 'none'
     assert policy.fieldmapless_method == 'topup'
 
 
@@ -108,9 +108,9 @@ def test_ignore_rejects_values_qsiplan_does_not_own():
 
 def test_sdc_anat_reference_choice_reads_into_the_policy():
     parser = _parser()
-    assert policy_from_namespace(parser.parse_args([])).sdc_anat_reference == 'synb0'
-    chosen = parser.parse_args(['--sdc-anat-reference', 'none'])
-    assert policy_from_namespace(chosen).sdc_anat_reference == 'none'
+    assert policy_from_namespace(parser.parse_args([])).sdc_anat_reference == 'none'
+    chosen = parser.parse_args(['--sdc-anat-reference', 'synb0'])
+    assert policy_from_namespace(chosen).sdc_anat_reference == 'synb0'
     with pytest.raises(SystemExit):
         parser.parse_args(['--sdc-anat-reference', 'auto'])
     with pytest.raises(SystemExit):

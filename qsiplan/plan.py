@@ -435,16 +435,23 @@ def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[Grou
 
         if uncorrected and not estimations:
             policy = grouping.policy
-            why = (
-                'fieldmap-less SDC is disabled for it (--sdc-anat-reference none or --ignore sdc)'
-                if policy.ignore_sdc or policy.sdc_anat_reference == 'none'
-                else 'the fieldmap-less correction could not be set up for it (see the errors)'
-            )
+            if policy.ignore_sdc:
+                why = 'susceptibility distortion correction is ignored (--ignore sdc)'
+                hint = ''
+            elif policy.sdc_anat_reference == 'none':
+                why = 'no fieldmap-less correction was requested'
+                hint = (
+                    ' Pass --sdc-anat-reference synb0 to correct it with a synthetic b=0 '
+                    'from the T1w (SynB0 + TOPUP).'
+                )
+            else:
+                why = 'the fieldmap-less correction could not be set up for it (see the errors)'
+                hint = ''
             issues.append(
                 warning(
                     'no-sdc',
                     f"Output '{concat.output_name}' has no fieldmap and {why}: no "
-                    'susceptibility distortion correction will be performed.',
+                    f'susceptibility distortion correction will be performed.{hint}',
                     concat.dwi_files,
                     scope=multipart_id,
                 )

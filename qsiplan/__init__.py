@@ -153,7 +153,7 @@ def build_dwi_grouping(
     ignore_shims=False,
     ignore_fov=False,
     ignore_sdc=False,
-    sdc_anat_reference='synb0',
+    sdc_anat_reference='none',
     force_sdc_anat_reference=False,
     distortion_group_merge='concat',
     b0_threshold=None,

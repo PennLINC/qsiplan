@@ -285,9 +285,10 @@ def test_synb0_topup_drbuddi_never_refines(tmp_path):
     ],
 )
 @pytest.mark.parametrize('scenario', ['fieldmapless_t1w_only', 'fieldmapless_t2w'])
-def test_default_fieldmapless_is_synb0_topup_for_every_hmc(tmp_path, scenario, hmc, sdc, stages):
-    # A T2w on disk does not bring unpile in: that takes --sdc-fieldmapless-method unpile.
-    plan = _plan_for(tmp_path, scenario, hmc, sdc)
+def test_synb0_topup_runs_for_every_hmc(tmp_path, scenario, hmc, sdc, stages):
+    # The default method once a reference is named; a T2w on disk does not bring
+    # unpile in, that takes --sdc-fieldmapless-method unpile.
+    plan = _plan_for(tmp_path, scenario, hmc, sdc, sdc_anat_reference='synb0')
     (run,) = plan.runs
     assert _role_tool(run) == stages
     assert all(stage.tool != 'unpile' for stage in run.stages)

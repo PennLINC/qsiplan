@@ -407,8 +407,9 @@ def resolve_estimations(
                         f'{names}: this subject has fieldmaps linked by B0FieldIdentifier/'
                         'B0FieldSource or IntendedFor, so '
                         'QSIPrep does not infer reverse phase-encoding pairings for '
-                        'the remaining series; they get the fieldmap-less correction '
-                        'instead. Add B0FieldIdentifier/B0FieldSource to pair them.',
+                        'the remaining series; only a fieldmap-less correction '
+                        '(--sdc-anat-reference) reaches them. Add '
+                        'B0FieldIdentifier/B0FieldSource to pair them.',
                         tuple(record.path for record in unlinked),
                     )
                 )
@@ -702,7 +703,7 @@ def resolve_fieldmapless(
     application: dict[str, str | None],
     provenance: dict[str, Provenance],
     candidates: dict[str, tuple[str, ...]],
-    sdc_anat_reference: str = 'synb0',
+    sdc_anat_reference: str = 'none',
     force_sdc_anat_reference: bool = False,
     fieldmapless_method: str = 'topup',
 ):
@@ -712,13 +713,14 @@ def resolve_fieldmapless(
     correction - each corrects a series entirely on its own, never layered with
     another:
 
-    - ``'topup'`` + ``'synb0'`` (the default): a SyNb0 synthetic b=0 from the
-      T1w, paired with the DWI's b=0 in TOPUP.
+    - ``'topup'`` + ``'synb0'``: a SyNb0 synthetic b=0 from the T1w, paired
+      with the DWI's b=0 in TOPUP (the default method once a reference is named).
     - ``'syn'`` + ``'synb0'`` or ``'invt1w'``: ANTs SyN registering the b=0 to
       the synthetic b=0, or to the inverted-contrast T1w (nipreps-style).
     - ``'unpile'`` + ``'synb0'`` or ``'t2w'``: unpile, a readout-model fit of the b=0
       to the synthetic b=0 or the T2w, after any head motion method.
-    - ``sdc_anat_reference='none'``: series no fieldmap reaches stay uncorrected.
+    - ``sdc_anat_reference='none'`` (the default): series no fieldmap reaches stay
+      uncorrected.
 
     The selected correction is a FALLBACK: it corrects only series that no
     fieldmap reaches. ``force_sdc_anat_reference`` escalates it to an OVERRIDE that
@@ -1158,7 +1160,7 @@ def build_grouping(
     ignore_shims: bool = False,
     ignore_fov: bool = False,
     ignore_sdc: bool = False,
-    sdc_anat_reference: str | None = 'synb0',
+    sdc_anat_reference: str | None = 'none',
     force_sdc_anat_reference: bool = False,
     distortion_group_merge: str | None = 'concat',
     fieldmapless_method: str | None = 'topup',
@@ -1176,7 +1178,7 @@ def build_grouping(
             f"distortion_group_merge must be 'concat', 'average', or 'none', "
             f'not {distortion_group_merge!r}.'
         )
-    sdc_anat_reference = sdc_anat_reference or 'synb0'
+    sdc_anat_reference = sdc_anat_reference or 'none'
     fieldmapless_method = fieldmapless_method or 'topup'
     invalid = fieldmapless_combination_error(fieldmapless_method, sdc_anat_reference)
     if invalid:

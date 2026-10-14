@@ -47,11 +47,11 @@ def test_selection_key_is_sorted():
 
 
 def test_combined_key_composes_both_axes():
-    policy = GroupingPolicy(sdc_anat_reference='none')
+    policy = GroupingPolicy(sdc_anat_reference='synb0')
     selection = selection_for_config('eddy', 'topup')
     assert (
         combined_key(policy, selection)
-        == 'hmc-method=eddy&sdc-anat-reference=none&sdc-method=topup'
+        == 'hmc-method=eddy&sdc-anat-reference=synb0&sdc-method=topup'
     )
     assert combined_key(GroupingPolicy(), selection) == selection.combination_key()
 
@@ -76,21 +76,21 @@ def test_reachable_policies_cover_the_grid():
 
 
 def test_none_initial_policy_renders_and_is_reachable(tmp_path):
-    """'--sdc-anat-reference none' and the forced default are grid cells the
+    """The default (fieldmap-less SDC off) and a forced SynB0 are grid cells the
     static page can open on."""
     records, issues = _indexed('fieldmapless_t2w', tmp_path)
-    off = GroupingPolicy(sdc_anat_reference='none')
+    off = GroupingPolicy()
 
     grid = build_policy_grid(records, '01', base=off, index_issues=issues)
     assert off.policy_key() in grid.policy_index
-    forced = GroupingPolicy(force_sdc_anat_reference=True)
+    forced = GroupingPolicy(sdc_anat_reference='synb0', force_sdc_anat_reference=True)
     assert forced.policy_key() in grid.policy_index
 
     page = render_explorer_html(records, '01', index_issues=issues, initial_policy=off)
-    assert '<option value="sdc-anat-reference=none"' in page
+    assert '<option value="sdc-anat-reference=synb0"' in page
     index = _embedded_index(page)
-    assert index['policies']['sdc-anat-reference=none']['sig'] is not None
-    assert index['policies']['sdc-anat-reference=none']['sig'] != index['policies']['']['sig']
+    assert index['policies']['sdc-anat-reference=synb0']['sig'] is not None
+    assert index['policies']['sdc-anat-reference=synb0']['sig'] != index['policies']['']['sig']
 
 
 def test_cli_phrase_composes_ignore_as_one_flag():
@@ -114,7 +114,8 @@ def test_cli_phrase_composes_ignore_as_one_flag():
         GroupingPolicy(fieldmapless_method='syn', sdc_anat_reference='invt1w').cli_phrase()
         == '--sdc-fieldmapless-method syn --sdc-anat-reference invt1w'
     )
-    assert GroupingPolicy(sdc_anat_reference='none').cli_phrase() == '--sdc-anat-reference none'
+    assert GroupingPolicy(sdc_anat_reference='synb0').cli_phrase() == '--sdc-anat-reference synb0'
+    assert GroupingPolicy().cli_phrase() == ''
     forced = GroupingPolicy(force_sdc_anat_reference=True)
     assert forced.cli_phrase() == '--force sdc-anat-reference'
 
@@ -276,7 +277,7 @@ def test_explorer_canonicalizes_force_without_method(tmp_path):
         initial_policy=policy,
     )
     index = _embedded_index(page)
-    assert 'sdc-anat-reference=none' in index['policies']
+    assert '' in index['policies']  # the plain default
     assert policy.policy_key() not in index['policies']
 
 

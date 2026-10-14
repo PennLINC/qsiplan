@@ -210,7 +210,7 @@ def test_scenario_c_sessionless_anat_is_shared_not_crossed(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_scenario_e_subject_wide_borrows_the_other_sessions_t1w(tmp_path):
     root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T2w']}})
-    (wide,) = _plan(root, '01', SessionScope()).values()
+    (wide,) = _plan(root, '01', SessionScope(), sdc_anat_reference='synb0').values()
 
     # ses-02 has only a T2w, which does not bring unpile in: its SyNb0 comes
     # from ses-01's T1w, and the grouping says so.
@@ -224,7 +224,7 @@ def test_scenario_e_subject_wide_borrows_the_other_sessions_t1w(tmp_path):
 
 def test_scenario_e_sessionwise_needs_each_sessions_own_t1w(tmp_path):
     root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T2w']}})
-    sessionwise = _plan(root, '01', SessionScope(model='sessionwise'))
+    sessionwise = _plan(root, '01', SessionScope(model='sessionwise'), sdc_anat_reference='synb0')
     assert _methods(sessionwise['sub-01_ses-01']) == {CorrectionMethod.SYNB0}
     assert 'synb0-requires-t1w' in _codes(sessionwise['sub-01_ses-02'])
 
@@ -285,16 +285,16 @@ def test_serve_sessionwise_routes_by_session_unit(tmp_path):
         Bids2TableCatalog(root),
         ['01'],
         scope=SessionScope(model='sessionwise'),
-        base_policy=GroupingPolicy(sdc_anat_reference='none'),
+        base_policy=GroupingPolicy(sdc_anat_reference='synb0'),
     )
     assert [unit.label for unit in app.units] == ['sub-01_ses-01', 'sub-01_ses-02']
     # Each unit routes to its own isolated live page/view.
     assert '/sub-01_ses-02/view' in app.page('01_ses-02')
     assert (
-        app.view('01_ses-02', 'sdc-anat-reference=none&hmc-method=eddy&sdc-method=topup')[
+        app.view('01_ses-02', 'sdc-anat-reference=synb0&hmc-method=eddy&sdc-method=topup')[
             'policyKey'
         ]
-        == 'sdc-anat-reference=none'
+        == 'sdc-anat-reference=synb0'
     )
     with pytest.raises(KeyError):
         app.page('01_ses-99')  # a session with no unit

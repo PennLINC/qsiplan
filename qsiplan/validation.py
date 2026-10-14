@@ -249,7 +249,7 @@ ISSUE_CODES: dict[str, IssueSpec] = {
     ),
     # ---- plan feasibility (per method selection) ----------------------------
     'no-sdc': _spec(
-        'An output has no fieldmap and no anatomical SDC method enabled; not corrected.',
+        'An output has no fieldmap and no fieldmap-less correction requested; not corrected.',
         'warning',
     ),
     'mixed-non-pepolar': _spec(

@@ -526,7 +526,7 @@ class GroupingPolicy:
     ignore_shims: bool = False
     ignore_fov: bool = False
     ignore_sdc: bool = False
-    sdc_anat_reference: str = 'synb0'
+    sdc_anat_reference: str = 'none'
     fieldmapless_method: str = 'topup'
     force_sdc_anat_reference: bool = False
     distortion_group_merge: str = 'concat'
@@ -580,7 +580,7 @@ class GroupingPolicy:
             flags.append('--ignore ' + ' '.join(ignored))
         if self.fieldmapless_method != 'topup':
             flags.append(f'--sdc-fieldmapless-method {self.fieldmapless_method}')
-        if self.sdc_anat_reference != 'synb0':
+        if self.sdc_anat_reference != 'none':
             flags.append(f'--sdc-anat-reference {self.sdc_anat_reference}')
         force_members = (('sdc-anat-reference', self.force_sdc_anat_reference),)
         forced = [value for value, enabled in force_members if enabled]

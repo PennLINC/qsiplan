@@ -111,7 +111,7 @@ class PlanOption:
 
         A consumer need not expose every flag - a ``planned`` one, or a config
         object that predates it - so a missing attribute falls back to the
-        option's default (``--sdc-anat-reference`` absent means ``sdc_anat_reference='synb0'``).
+        option's default (``--sdc-anat-reference`` absent means ``sdc_anat_reference='none'``).
         """
         value = getattr(namespace, self.dest, self.default)
         if self.kind is Kind.FLAG:
@@ -213,14 +213,14 @@ PLAN_OPTIONS: tuple[PlanOption, ...] = (
         Axis.POLICY,
         Kind.CHOICE,
         'which anatomical-derived image the fieldmap-less correction uses: '
-        "'synb0' (the default) synthesizes an undistorted b=0 from the T1w, "
-        "'invt1w' is the inverted-contrast T1w (SyN only), 't2w' the real T2w "
-        "(unpile only), and 'none' disables fieldmap-less SDC; a series the "
-        'correction cannot handle (no T1w, no PhaseEncodingDirection or '
-        'TotalReadoutTime) is an error',
+        "'none' (the default) leaves series no fieldmap reaches uncorrected, "
+        "'synb0' synthesizes an undistorted b=0 from the T1w, 'invt1w' is the "
+        "inverted-contrast T1w (SyN only), 't2w' the real T2w (unpile only); "
+        'a series the selected correction cannot handle (no T1w, no '
+        'PhaseEncodingDirection or TotalReadoutTime) is an error',
         policy_field='sdc_anat_reference',
         choices=ANAT_REFERENCE_CHOICES,
-        default='synb0',
+        default='none',
     ),
     PlanOption(
         '--distortion-group-merge',

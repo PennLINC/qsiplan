@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The fieldmap-less correction is chosen by a method (`--sdc-fieldmapless-method`: `topup`
+  for SyNb0 + TOPUP, `syn`, or `unpile`, which is experimental) and an anatomical reference
+  (`--sdc-anat-reference`: `synb0`, `invt1w`, `t2w`), with the issues each combination
+  raises, instead of `auto` and the rule that a T2w selects a correction by itself. The
+  correction stays off by default (`none`): an output no fieldmap reaches is left uncorrected,
+  and the `no-sdc` warning names the flag that would correct it.
+- unpile is a correction method of its own (`CorrectionMethod.UNPILE`), planned for every head
+  motion method against the synthetic b=0 or the T2w, with a GRE fieldmap that also lists the
+  series as its prior.
+- The cohort dashboard tracks T1w presence.
 - Fix a dataset that sits below a directory named `sub-*` (e.g. a per-subject working
   directory, `work/sub-01/data/sub-01/dwi/`) being read with the wrong datatype, so its
   images were neither DWIs nor fieldmaps. The datatype is now read from the file's own

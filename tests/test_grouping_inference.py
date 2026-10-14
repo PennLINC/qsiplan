@@ -486,17 +486,26 @@ def test_fieldmap_curation_alone_does_not_stop_concatenation(tmp_path):
 def test_fieldmap_links_stop_pairing_in_every_session(tmp_path):
     """A fieldmap linked in one session switches reverse-PE pairing inference
     off for the whole subject, the scope a MultipartID has for concatenation;
-    the unpaired session gets the fieldmap-less default instead."""
+    with fieldmap-less correction off (the default) the unpaired session is
+    left uncorrected, and with it on it is corrected that way."""
     grouping = load_scenario('multi_session_partial_curation', tmp_path)
 
-    assert sorted(grouping.estimations) == ['auto+synb0+ses-2', 'pepolar01']
+    assert list(grouping.estimations) == ['pepolar01']
     applied = {op.basename(path): source for path, source in grouping.application.items()}
     assert applied == {
         'sub-01_ses-1_dir-AP_dwi.nii.gz': 'pepolar01',
         'sub-01_ses-1_dir-PA_dwi.nii.gz': 'pepolar01',
-        'sub-01_ses-2_dir-AP_dwi.nii.gz': 'auto+synb0+ses-2',
-        'sub-01_ses-2_dir-PA_dwi.nii.gz': 'auto+synb0+ses-2',
+        'sub-01_ses-2_dir-AP_dwi.nii.gz': None,
+        'sub-01_ses-2_dir-PA_dwi.nii.gz': None,
     }
+    corrected = load_scenario(
+        'multi_session_partial_curation', tmp_path / 'corrected', sdc_anat_reference='synb0'
+    )
+    assert sorted(corrected.estimations) == ['auto+synb0+ses-2', 'pepolar01']
+    assert (
+        corrected.application[[p for p in corrected.application if 'ses-2_dir-AP' in p][0]]
+        == 'auto+synb0+ses-2'
+    )
     (issue,) = [issue for issue in grouping.warnings if issue.code == 'reverse-pe-not-inferred']
     assert 'sub-01_ses-2_dir-AP_dwi.nii.gz, sub-01_ses-2_dir-PA_dwi.nii.gz' in issue.render()
     assert 'ses-1' not in issue.render()
@@ -813,10 +822,19 @@ def test_per_axis_curated_fmaps_merge_after_correction(tmp_path):
     assert 'output-name-collision' not in issue_codes(grouping.errors)
 
 
-def test_fieldmapless_t2w_defaults_to_synb0(tmp_path):
-    """The default fieldmap-less correction is SynB0 + TOPUP: a T2w on disk does not
-    bring unpile in, and every HMC method can run it."""
+def test_fieldmapless_is_off_by_default(tmp_path):
+    """Series no fieldmap reaches are left uncorrected unless a reference is named."""
     grouping = load_scenario('fieldmapless_t2w', tmp_path)
+
+    assert not grouping.estimations
+    assert all(source is None for source in grouping.application.values())
+    assert not grouping.errors
+
+
+def test_fieldmapless_t2w_synb0_is_the_default_method(tmp_path):
+    """With a reference named, the default method is SynB0 + TOPUP: a T2w on disk does
+    not bring unpile in, and every HMC method can run it."""
+    grouping = load_scenario('fieldmapless_t2w', tmp_path, sdc_anat_reference='synb0')
 
     assert list(grouping.estimations) == ['auto+synb0']
     estimation = grouping.estimations['auto+synb0']
@@ -868,9 +886,11 @@ def test_auto_reference_is_rejected(tmp_path):
         load_scenario('fieldmapless_t2w', tmp_path, sdc_anat_reference='auto')
 
 
-def test_t2w_only_subject_needs_a_t1w_for_the_default(tmp_path):
-    """Without a T1w the default SynB0 cannot run: an error that names the way out."""
-    grouping = load_scenario('fieldmapless_t2w_only', tmp_path, strict=False)
+def test_t2w_only_subject_needs_a_t1w_for_synb0(tmp_path):
+    """Without a T1w a requested SynB0 cannot run: an error that names the way out."""
+    grouping = load_scenario(
+        'fieldmapless_t2w_only', tmp_path, strict=False, sdc_anat_reference='synb0'
+    )
 
     assert not grouping.estimations
     errors = [issue for issue in grouping.errors if issue.code == 'synb0-requires-t1w']
@@ -879,8 +899,10 @@ def test_t2w_only_subject_needs_a_t1w_for_the_default(tmp_path):
 
 
 def test_ignore_t2w_removes_the_t2w_from_indexing(tmp_path):
-    """``--ignore t2w`` drops the T2w record entirely; the T1w-based default still runs."""
-    grouping = load_scenario('fieldmapless_t2w', tmp_path, ignore_t2w=True)
+    """``--ignore t2w`` drops the T2w record entirely; the T1w-based SynB0 still runs."""
+    grouping = load_scenario(
+        'fieldmapless_t2w', tmp_path, ignore_t2w=True, sdc_anat_reference='synb0'
+    )
 
     assert grouping.policy.ignore_t2w
     assert not grouping.anat_files('T2w')  # the T2w was never indexed
@@ -896,11 +918,11 @@ def test_ignore_t2w_removes_the_t2w_from_indexing(tmp_path):
         )
 
 
-def test_default_without_anatomicals_is_an_error(tmp_path):
-    """No T1w at all: the default SynB0 reference reports an error, not a silent skip."""
+def test_synb0_without_anatomicals_is_an_error(tmp_path):
+    """No T1w at all: a requested SynB0 reference reports an error, not a silent skip."""
     grouping = load_scenario('fieldmapless_t1w_only', tmp_path, strict=False)
     records = [record for record in grouping.files.values() if not record.is_anat]
-    regrouped = build_grouping(records, subject_id='01')
+    regrouped = build_grouping(records, subject_id='01', sdc_anat_reference='synb0')
 
     assert not regrouped.estimations
     assert set(regrouped.application.values()) == {None}
@@ -925,8 +947,8 @@ def test_force_sdc_anat_reference_requires_a_method(tmp_path):
 
 
 def test_fieldmapless_t1w_only(tmp_path):
-    """No fieldmap and no T2w: SynB0 + TOPUP by default; uncorrected only with 'none'."""
-    grouping = load_scenario('fieldmapless_t1w_only', tmp_path)
+    """No fieldmap and no T2w: SynB0 + TOPUP when asked for; uncorrected by default."""
+    grouping = load_scenario('fieldmapless_t1w_only', tmp_path, sdc_anat_reference='synb0')
     assert list(grouping.estimations) == ['auto+synb0']
 
     grouping = load_scenario('fieldmapless_t1w_only', tmp_path / 'none', sdc_anat_reference='none')
@@ -1294,7 +1316,9 @@ def test_synb0_unit_leaves_drbuddi_on_the_t2w(tmp_path):
     PEPOLAR pair's DRBUDDI keeps the T2w as its structural target."""
     from qsiplan import describe_processing
 
-    grouping = load_scenario('partial_curation_stranded', tmp_path, strict=False)
+    grouping = load_scenario(
+        'partial_curation_stranded', tmp_path, strict=False, sdc_anat_reference='synb0'
+    )
     # The curated fieldmap still wins for the run-1 pair; run-2 gets SyNb0.
     applied = {op.basename(path): chosen for path, chosen in grouping.application.items()}
     assert applied == {
