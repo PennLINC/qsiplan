@@ -407,9 +407,8 @@ def resolve_estimations(
                         f'{names}: this subject has fieldmaps linked by B0FieldIdentifier/'
                         'B0FieldSource or IntendedFor, so '
                         'QSIPrep does not infer reverse phase-encoding pairings for '
-                        'the remaining series. Add B0FieldIdentifier/B0FieldSource '
-                        'to correct them (fieldmap-less correction can still be '
-                        'requested at the command line).',
+                        'the remaining series; they get the fieldmap-less correction '
+                        'instead. Add B0FieldIdentifier/B0FieldSource to pair them.',
                         tuple(record.path for record in unlinked),
                     )
                 )

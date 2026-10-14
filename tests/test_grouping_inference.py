@@ -485,16 +485,17 @@ def test_fieldmap_curation_alone_does_not_stop_concatenation(tmp_path):
 
 def test_fieldmap_links_stop_pairing_in_every_session(tmp_path):
     """A fieldmap linked in one session switches reverse-PE pairing inference
-    off for the whole subject, the scope a MultipartID has for concatenation."""
+    off for the whole subject, the scope a MultipartID has for concatenation;
+    the unpaired session gets the fieldmap-less default instead."""
     grouping = load_scenario('multi_session_partial_curation', tmp_path)
 
-    assert list(grouping.estimations) == ['pepolar01']
+    assert sorted(grouping.estimations) == ['auto+synb0+ses-2', 'pepolar01']
     applied = {op.basename(path): source for path, source in grouping.application.items()}
     assert applied == {
         'sub-01_ses-1_dir-AP_dwi.nii.gz': 'pepolar01',
         'sub-01_ses-1_dir-PA_dwi.nii.gz': 'pepolar01',
-        'sub-01_ses-2_dir-AP_dwi.nii.gz': None,
-        'sub-01_ses-2_dir-PA_dwi.nii.gz': None,
+        'sub-01_ses-2_dir-AP_dwi.nii.gz': 'auto+synb0+ses-2',
+        'sub-01_ses-2_dir-PA_dwi.nii.gz': 'auto+synb0+ses-2',
     }
     (issue,) = [issue for issue in grouping.warnings if issue.code == 'reverse-pe-not-inferred']
     assert 'sub-01_ses-2_dir-AP_dwi.nii.gz, sub-01_ses-2_dir-PA_dwi.nii.gz' in issue.render()
