@@ -31,9 +31,16 @@ _TOOL_LABELS = {
     'tortoise': 'TORTOISE',
     'drbuddi': 'DRBUDDI',
     'fieldmap': 'GRE fieldmap',
-    't2wreg': 'T2Wreg',
+    'unpile': 'unpile',
     'syn': 'SyN',
 }
+
+
+def _stage_label(stage) -> str:
+    label = _TOOL_LABELS.get(stage.tool, stage.tool)
+    if stage.structural_target == 'synb0':
+        return f'{label} (SyNb0)'
+    return label
 
 
 def _basename(path: str) -> str:
@@ -63,7 +70,7 @@ def plan_payload(grouping, plan) -> dict:
                     'index': stage.index,
                     'role': stage.role.value,
                     'tool': stage.tool,
-                    'label': _TOOL_LABELS.get(stage.tool, stage.tool),
+                    'label': _stage_label(stage),
                     'method': stage.method.value if stage.method else None,
                     'estimation': stage.estimation,
                     'letter': letters.get(stage.estimation),

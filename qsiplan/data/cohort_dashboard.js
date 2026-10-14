@@ -35,9 +35,13 @@
       {t:'good',g:'✓',h:'The cohort majority — every other class is diffed against this one.'}
     ]};
     var diff=[], kind='info', title='Variant workflow';
-    if(rep.t2w && !rrep.t2w){ title='T2w present — anatomical SDC target'; kind='info';
-      diff.push({t:'info',g:'≠',h:'Has a <code>T2w</code>; registration-based SDC gains a structural target the reference lacks.'}); }
-    else if(!rep.t2w && rrep.t2w){ title='No T2w'; kind='info';
+    if(!rep.t1w && rrep.t1w){ title='No T1w — no SyNb0'; kind='warn';
+      diff.push({t:'warn',g:'−',h:'No <code>T1w</code>: the default fieldmap-less correction (SyNb0 + TOPUP) cannot run.'}); }
+    else if(rep.t1w && !rrep.t1w){ title='T1w present';
+      diff.push({t:'info',g:'≠',h:'Has a <code>T1w</code> where the reference has none.'}); }
+    if(rep.t2w && !rrep.t2w){ if(title==='Variant workflow') title='T2w present — DRBUDDI structural target';
+      diff.push({t:'info',g:'≠',h:'Has a <code>T2w</code>; DRBUDDI gains a structural target the reference lacks.'}); }
+    else if(!rep.t2w && rrep.t2w){ if(title==='Variant workflow') title='No T2w';
       diff.push({t:'info',g:'≠',h:'No <code>T2w</code> where the reference has one.'}); }
     if(rep.scans<rrep.scans){ title='Missing '+(rrep.scans-rep.scans)+' scan'+(rrep.scans-rep.scans>1?'s':''); kind='warn';
       diff.push({t:'warn',g:'−',h:'<b>'+(rrep.scans-rep.scans)+'</b> fewer DWI series than the reference ('+rep.scans+' vs '+rrep.scans+').'}); }
@@ -122,7 +126,7 @@
     var sigClass={}; // session sig -> class index under current method
     partition(sessions, curMethod).forEach(function(c,i){ sigClass[c.sig]=i; });
     var byKey={}; sessions.forEach(function(e){ byKey[e.subject+'|'+(e.session||'')]=e;});
-    var head='<tr><th></th>'+(multi?cols.map(function(c){return '<th>ses-'+c+'</th>';}).join(''):'<th>grouping</th>')+'<th>T2w</th></tr>';
+    var head='<tr><th></th>'+(multi?cols.map(function(c){return '<th>ses-'+c+'</th>';}).join(''):'<th>grouping</th>')+'<th>anat</th></tr>';
     var kindOf=['good','warn','info','crit'];
     var body=subjects.map(function(s){
       var cells;
@@ -138,8 +142,9 @@
         var k=kindOf[sigClass[e.byMethod[curMethod].sig]%4]||'info';
         cells='<td><div class="mcell" style="'+clVars(k)+';background:var(--cl-soft);color:var(--cl);border-color:var(--cl-line)">'+e.scans+'</div></td>';
       }
-      var t2=s.t2w?'<td><div class="mcell" style="'+clVars('info')+';background:var(--cl-soft);color:var(--cl);border-color:var(--cl-line)">T2w</div></td>'
-                  :'<td><div class="mcell absent">—</div></td>';
+      var anat=[s.t1w?'T1w':'', s.t2w?'T2w':''].filter(Boolean).join(' ');
+      var t2=anat?'<td><div class="mcell" style="'+clVars(s.t1w?'info':'warn')+';background:var(--cl-soft);color:var(--cl);border-color:var(--cl-line)">'+anat+'</div></td>'
+                 :'<td><div class="mcell absent">—</div></td>';
       return '<tr><td class="rh"><a class="chip" href="'+href(s.href)+'">sub-'+esc(s.subject)+'</a></td>'+cells+t2+'</tr>';
     }).join('');
     document.getElementById('matrix').innerHTML='<thead>'+head+'</thead><tbody>'+body+'</tbody>';

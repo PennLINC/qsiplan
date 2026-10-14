@@ -17,7 +17,12 @@ from __future__ import annotations
 import dataclasses
 import enum
 
-from .models import ANAT_REFERENCE_CHOICES, CorrectionMethod, GroupingPolicy
+from .models import (
+    ANAT_REFERENCE_CHOICES,
+    FIELDMAPLESS_METHOD_CHOICES,
+    CorrectionMethod,
+    GroupingPolicy,
+)
 
 
 class HmcMethod(enum.StrEnum):
@@ -40,7 +45,7 @@ class SdcTool(enum.StrEnum):
     TOPUP = 'topup'
     DRBUDDI = 'drbuddi'
     FIELDMAP = 'fieldmap'  # the vendored GRE/phase-difference unwarp path
-    T2WREG = 't2wreg'  # TORTOISE registration of b=0 images to a T2w
+    UNPILE = 'unpile'  # readout-model fit of the b=0 to a SyNb0 or the T2w
     SYN = 'syn'  # ANTs SyN registration to a template (classic fieldmap-less)
 
 
@@ -166,9 +171,9 @@ SDC_CAPABILITIES: dict[SdcTool, SdcCapabilities] = {
         refinement_capable=False,
         single_encoding=True,
     ),
-    SdcTool.T2WREG: SdcCapabilities(
-        label='T2Wreg',
-        consumes=frozenset({CorrectionMethod.T2WREG}),
+    SdcTool.UNPILE: SdcCapabilities(
+        label='unpile',
+        consumes=frozenset({CorrectionMethod.UNPILE}),
         measured=False,
         needs_opposed_signatures=False,
         single_blip_pair_only=False,
@@ -205,7 +210,7 @@ class MethodSelection:
     ``pepolar_tools`` is the ordered tool chain for PEPOLAR (and SYNB0)
     corrections - ``(TOPUP,)``, ``(DRBUDDI,)``, or ``(TOPUP, DRBUDDI)`` for
     TOPUP with DRBUDDI refinement. Data-driven methods (GRE fieldmaps, SyN,
-    T2Wreg) are chosen per unit by the grouping, not here; the fieldmap-less
+    unpile) are chosen per unit by the grouping, not here; the fieldmap-less
     flags that enable them live on :class:`~.models.GroupingPolicy` - they
     change the grouping itself, so they are policy, not selection.
     """
@@ -308,6 +313,8 @@ def parse_combined_key(key: str):
                 if name == 'distortion-group-merge' and value not in ('concat', 'average', 'none'):
                     raise ValueError(f'Unknown {name} value: {value!r}')
                 if name == 'sdc-anat-reference' and value not in ANAT_REFERENCE_CHOICES:
+                    raise ValueError(f'Unknown {name} value: {value!r}')
+                if name == 'fieldmapless-method' and value not in FIELDMAPLESS_METHOD_CHOICES:
                     raise ValueError(f'Unknown {name} value: {value!r}')
                 policy_kwargs[field.name] = value
         else:

@@ -38,7 +38,7 @@ SCENARIOS = [
     'cross_axis_b0field',
     'cross_axis_unpaired',
     'curated_b0field',
-    'curated_t2wreg',
+    'curated_unpile',
     'fieldmapless_t1w_only',
     'fieldmapless_t2w',
     'fieldmapless_t2w_only',

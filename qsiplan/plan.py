@@ -35,10 +35,10 @@ from .adapters import (
 from .methods import HMC_CAPABILITIES, SDC_CAPABILITIES, HmcMethod, MethodSelection, SdcTool
 from .models import (
     ANAT_REFERENCES,
+    FIELDMAPLESS_METHODS,
     CorrectionMethod,
     DWIGrouping,
     FieldmapEstimation,
-    Provenance,
 )
 from .validation import (
     GroupingIssue,
@@ -48,7 +48,6 @@ from .validation import (
     describe_blip_group,
     dwi_blip_pairs,
     error,
-    structural_target,
     warning,
 )
 
@@ -291,6 +290,28 @@ def _pepolar_stages(
     return stages
 
 
+def _fieldmapless_fallback(
+    grouping: DWIGrouping, selection: MethodSelection
+) -> tuple[CorrectionMethod, str, tuple[str, ...]] | None:
+    """The fieldmap-less correction a blip group with no opposing pair falls back to.
+
+    A decomposed PEPOLAR unit's unpaired blip group has no estimation of its
+    own (its series were reached by the PEPOLAR one), so the policy's
+    fieldmap-less correction is planned for it directly: ``(method,
+    structural_target, anatomical sources)``, or ``None`` when fieldmap-less
+    SDC is off or the anatomy is missing.
+    """
+    policy = grouping.policy
+    if policy.ignore_sdc or policy.sdc_anat_reference == 'none':
+        return None
+    spec = FIELDMAPLESS_METHODS[policy.fieldmapless_method]
+    reference = ANAT_REFERENCES[policy.sdc_anat_reference]
+    sources = tuple(grouping.anat_files(reference.source_suffix))
+    if not sources:
+        return None
+    return spec.method, reference.structural_target, sources
+
+
 def _stages_for_unit(
     grouping: DWIGrouping, selection: MethodSelection, unit: PreprocUnit
 ) -> tuple[PlanStage, ...]:
@@ -300,68 +321,88 @@ def _stages_for_unit(
 
     hmc = PlanStage(index=0, role=StageRole.HMC, tool=selection.hmc.value)
     estimation = unit.estimation
+    if estimation is None:
+        # Series some estimation reaches but this unit has none for: an unpaired
+        # blip group split off a PEPOLAR unit.
+        unpaired = any(grouping.application.get(path) for path in unit.dwi_files)
+        fallback = _fieldmapless_fallback(grouping, selection) if unpaired else None
+        if fallback is None:
+            return (hmc,)
+        method, target, sources = fallback
+        tool = {
+            CorrectionMethod.SYNB0: SdcTool.TOPUP,
+            CorrectionMethod.NIPREPS_SYN: SdcTool.SYN,
+            CorrectionMethod.UNPILE: SdcTool.UNPILE,
+        }[method]
+        return (
+            hmc,
+            PlanStage(
+                index=1,
+                role=StageRole.ESTIMATE_AND_APPLY,
+                tool=tool.value,
+                method=method,
+                fieldmap_sources=sources,
+                structural_target=target,
+            ),
+        )
+    common = {
+        'method': unit.method,
+        'estimation': estimation.b0field_id,
+        'fieldmap_sources': tuple(estimation.sources),
+        'structural_target': estimation.structural_target,
+    }
 
-    if unit.is_gre or unit.is_nipreps_syn:
-        # The classic fieldmap workflows estimate after HMC; the warps are
+    if unit.is_gre:
+        # The classic fieldmap workflow estimates after HMC; the warp is
         # composed into the final resampling.
         return (
             hmc,
             PlanStage(
                 index=1,
                 role=StageRole.ESTIMATE_AND_APPLY,
-                tool=(SdcTool.SYN if unit.is_nipreps_syn else SdcTool.FIELDMAP).value,
-                method=unit.method,
-                estimation=estimation.b0field_id,
-                fieldmap_sources=tuple(estimation.sources),
-                structural_target=(
-                    ANAT_REFERENCES['invt1w'].structural_target if unit.is_nipreps_syn else None
-                ),
+                tool=SdcTool.FIELDMAP.value,
+                **{**common, 'structural_target': None},
             ),
         )
-
-    # SYNB0 is pepolar-by-synthesis: under eddy+TOPUP the synthetic
-    # undistorted b=0 joins TOPUP's inputs as a zero-readout distortion
-    # group, and eddy consumes the estimated field exactly as it does for a
-    # measured PEPOLAR pair.
-    if (
-        unit.method is CorrectionMethod.SYNB0
-        and selection.hmc is HmcMethod.EDDY
-        and SdcTool.TOPUP in selection.pepolar_tools
-    ):
+    if unit.is_nipreps_syn:
+        # SyN registers the b=0 to the inverted T1w or to a SyNb0 synthetic b=0.
         return (
+            hmc,
             PlanStage(
-                index=0,
-                role=StageRole.ESTIMATE,
-                tool=SdcTool.TOPUP.value,
-                method=CorrectionMethod.SYNB0,
-                estimation=estimation.b0field_id,
-                fieldmap_sources=tuple(estimation.sources),
-                structural_target=ANAT_REFERENCES['synb0'].structural_target,
-            ),
-            PlanStage(
-                index=1, role=StageRole.HMC_WITH_FIELD, tool=HmcMethod.EDDY.value, consumes=0
+                index=1, role=StageRole.ESTIMATE_AND_APPLY, tool=SdcTool.SYN.value, **common
             ),
         )
 
-    # The fieldmap-less family (T2Wreg, SyNb0 outside eddy+TOPUP) and
-    # uncorrected units. Only DIFFPREP registers to a structural target here;
-    # SHORELine and TOPUP-less eddy leave these series uncorrected (neither
-    # runs T2Wreg, and DRBUDDI does not consume the synthetic b=0 yet).
-    if selection.hmc is HmcMethod.TORTOISE:
-        target = structural_target(grouping)
-        if target is not None:
+    # SYNB0 is pepolar-by-synthesis: the synthetic undistorted b=0 is TOPUP's
+    # zero-readout partner. Under eddy it joins TOPUP's inputs before eddy,
+    # which consumes the field like a measured PEPOLAR one (whatever
+    # --sdc-method says, which only chooses the PEPOLAR tools); after DIFFPREP
+    # or SHORELine TOPUP pairs it with the motion-corrected b=0, and the field
+    # is composed into the final resampling.
+    if unit.method is CorrectionMethod.SYNB0:
+        if selection.hmc is HmcMethod.EDDY:
             return (
-                hmc,
+                PlanStage(index=0, role=StageRole.ESTIMATE, tool=SdcTool.TOPUP.value, **common),
                 PlanStage(
-                    index=1,
-                    role=StageRole.ESTIMATE_AND_APPLY,
-                    tool=SdcTool.T2WREG.value,
-                    method=unit.method,
-                    estimation=estimation.b0field_id if estimation else None,
-                    fieldmap_sources=tuple(estimation.sources) if estimation else (),
-                    structural_target=target[0],
+                    index=1, role=StageRole.HMC_WITH_FIELD, tool=HmcMethod.EDDY.value, consumes=0
                 ),
             )
+        return (
+            hmc,
+            PlanStage(
+                index=1, role=StageRole.ESTIMATE_AND_APPLY, tool=SdcTool.TOPUP.value, **common
+            ),
+        )
+
+    # unpile (explicit only) fits the field after head motion correction, with
+    # every HMC method: the b=0 against a SyNb0 synthetic b=0 or the T2w.
+    if unit.method is CorrectionMethod.UNPILE:
+        return (
+            hmc,
+            PlanStage(
+                index=1, role=StageRole.ESTIMATE_AND_APPLY, tool=SdcTool.UNPILE.value, **common
+            ),
+        )
     return (hmc,)
 
 
@@ -393,12 +434,17 @@ def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[Grou
         ]
 
         if uncorrected and not estimations:
+            policy = grouping.policy
+            why = (
+                'fieldmap-less SDC is disabled for it (--sdc-anat-reference none or --ignore sdc)'
+                if policy.ignore_sdc or policy.sdc_anat_reference == 'none'
+                else 'the fieldmap-less correction could not be set up for it (see the errors)'
+            )
             issues.append(
                 warning(
                     'no-sdc',
-                    f"Output '{concat.output_name}' has no fieldmap and no anatomical "
-                    'SDC method was enabled for it (see --sdc-anat-reference): no susceptibility '
-                    'distortion correction will be performed.',
+                    f"Output '{concat.output_name}' has no fieldmap and {why}: no "
+                    'susceptibility distortion correction will be performed.',
                     concat.dwi_files,
                     scope=multipart_id,
                 )
@@ -406,28 +452,6 @@ def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[Grou
 
         for b0field_id in sorted(estimations):
             estimation = grouping.estimations[b0field_id]
-
-            if estimation.method is CorrectionMethod.T2WREG:
-                # T2Wreg lives in TORTOISE's DIFFPREP; eddy cannot reach it.
-                if is_eddy:
-                    demanded = estimation.provenance in (Provenance.FORCED, Provenance.CURATED)
-                    make_issue = error if demanded else warning
-                    issues.append(
-                        make_issue(
-                            'anat-sdc-unsupported',
-                            f"Estimation '{b0field_id}' is a T2w registration "
-                            f'(T2Wreg), which only the TORTOISE path implements. '
-                            + (
-                                'Use --hmc-method tortoise to run it.'
-                                if demanded
-                                else f"On this path '{concat.output_name}' gets no "
-                                'susceptibility distortion correction.'
-                            ),
-                            estimation.sources,
-                            scope=multipart_id,
-                        )
-                    )
-                continue
 
             if estimation.method is CorrectionMethod.SYNB0:
                 # The synthetic b=0 is a target image every method can consume;
@@ -488,14 +512,7 @@ def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[Grou
             elif refining and not dwi_blip_pairs(grouping, estimation):
                 # DRBUDDI refinement needs reverse phase-encoded dMRI *series*;
                 # a lone reverse b=0 was already consumed by TOPUP.
-                fallback = (
-                    f"'{concat.output_name}' gets single-stage (TOPUP+eddy) "
-                    'correction (the eddy path has no T2Wreg second stage).'
-                    if structural_target(grouping) is not None
-                    else 'No T2w or SyNb0 synthetic b=0 is available for a T2Wreg '
-                    f"second stage either, so '{concat.output_name}' gets "
-                    'single-stage (TOPUP+eddy) correction.'
-                )
+                fallback = f"'{concat.output_name}' gets single-stage (TOPUP+eddy) correction."
                 issues.append(
                     warning(
                         'drbuddi-refinement-not-useful',
@@ -517,16 +534,15 @@ def _plan_issues(grouping: DWIGrouping, selection: MethodSelection) -> list[Grou
                     # DRBUDDI, an unpaired group to the fieldmap-less fallback
                     # (DIFFPREP only; SHORELine has none).
                     groups = '; '.join(describe_blip_group(key) for key in unpaired)
-                    if selection.hmc is HmcMethod.TORTOISE:
-                        path_name = 'TORTOISE'
-                        fallback = (
-                            'corrected by T2Wreg against the T2w instead'
-                            if grouping.anat_files('T2w')
-                            else 'left uncorrected (no T2w for a T2Wreg fallback)'
-                        )
-                    else:
-                        path_name = 'SHORELine'
-                        fallback = 'left uncorrected (SHORELine has no T2Wreg fallback)'
+                    path_name = 'TORTOISE' if selection.hmc is HmcMethod.TORTOISE else 'SHORELine'
+                    policy = grouping.policy
+                    spec = FIELDMAPLESS_METHODS[policy.fieldmapless_method]
+                    fallback = (
+                        f'corrected by the fieldmap-less correction instead ({spec.description}, '
+                        f'--sdc-anat-reference {policy.sdc_anat_reference})'
+                        if _fieldmapless_fallback(grouping, selection) is not None
+                        else 'left uncorrected (fieldmap-less SDC is disabled or has no anatomy)'
+                    )
                     issues.append(
                         warning(
                             'drbuddi-no-opposing-pair',
@@ -607,7 +623,11 @@ def _mixes_encodings_under_one_warp(grouping: DWIGrouping, unit, selection) -> b
     return any(
         stage.role is StageRole.ESTIMATE_AND_APPLY
         and stage.tool in SDC_CAPABILITIES
-        and SDC_CAPABILITIES[stage.tool].single_encoding
+        and (
+            SDC_CAPABILITIES[stage.tool].single_encoding
+            # Post-HMC TOPUP pairs one encoding with the synthetic b=0.
+            or stage.method is CorrectionMethod.SYNB0
+        )
         for stage in _stages_for_unit(grouping, selection, unit)
     )
 

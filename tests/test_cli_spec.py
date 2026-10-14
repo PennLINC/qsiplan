@@ -85,7 +85,8 @@ def test_policy_from_namespace_tolerates_missing_flags():
     )
     policy = policy_from_namespace(namespace)
     assert policy == GroupingPolicy(separate_all_dwis=True, ignore_fieldmaps=True)
-    assert policy.sdc_anat_reference == 'none'
+    assert policy.sdc_anat_reference == 'synb0'
+    assert policy.fieldmapless_method == 'topup'
 
 
 def test_ignore_is_one_list_flag_toggling_the_right_fields():
@@ -99,7 +100,7 @@ def test_ignore_is_one_list_flag_toggling_the_right_fields():
 def test_ignore_rejects_values_qsiplan_does_not_own():
     # 'phase' is a qsiprep-only --ignore choice; qsiplan's parser must not
     # silently accept it (it would map to no grouping field). 't2w' *is* owned
-    # by qsiplan now (it drops the T2Wreg fieldmap-less fallback).
+    # by qsiplan now (it drops the unpile fieldmap-less fallback).
     with pytest.raises(SystemExit):
         _parser().parse_args(['--ignore', 'phase'])
     assert policy_from_namespace(_parser().parse_args(['--ignore', 't2w'])).ignore_t2w
@@ -107,9 +108,11 @@ def test_ignore_rejects_values_qsiplan_does_not_own():
 
 def test_sdc_anat_reference_choice_reads_into_the_policy():
     parser = _parser()
-    assert policy_from_namespace(parser.parse_args([])).sdc_anat_reference == 'none'
-    chosen = parser.parse_args(['--sdc-anat-reference', 'synb0'])
-    assert policy_from_namespace(chosen).sdc_anat_reference == 'synb0'
+    assert policy_from_namespace(parser.parse_args([])).sdc_anat_reference == 'synb0'
+    chosen = parser.parse_args(['--sdc-anat-reference', 'none'])
+    assert policy_from_namespace(chosen).sdc_anat_reference == 'none'
+    with pytest.raises(SystemExit):
+        parser.parse_args(['--sdc-anat-reference', 'auto'])
     with pytest.raises(SystemExit):
         parser.parse_args(['--sdc-anat-reference', 'bogus'])
 
@@ -149,8 +152,13 @@ def test_shoreline_model_requires_shoreline():
         GroupingPolicy(ignore_fieldmaps=True, ignore_shims=True),
         GroupingPolicy(ignore_pepolar_dwis=True, ignore_fieldmaps=True),
         GroupingPolicy(ignore_sdc=True, separate_all_dwis=True),
-        GroupingPolicy(sdc_anat_reference='invt1w', distortion_group_merge='none'),
-        GroupingPolicy(sdc_anat_reference='t2w', force_sdc_anat_reference=True),
+        GroupingPolicy(
+            fieldmapless_method='syn', sdc_anat_reference='invt1w', distortion_group_merge='none'
+        ),
+        GroupingPolicy(
+            fieldmapless_method='unpile', sdc_anat_reference='t2w', force_sdc_anat_reference=True
+        ),
+        GroupingPolicy(sdc_anat_reference='none'),
     ],
 )
 def test_cli_phrase_round_trips_through_the_parser(policy):
@@ -219,9 +227,9 @@ def test_owned_choices_are_the_conformance_contract():
     assert set(by_flag['--force'].owned_choices()) == {'sdc-anat-reference'}
     assert set(by_flag['--sdc-anat-reference'].owned_choices()) == {
         'none',
-        'auto',
         'synb0',
         't2w',
         'invt1w',
     }
+    assert set(by_flag['--sdc-fieldmapless-method'].owned_choices()) == {'topup', 'syn', 'unpile'}
     assert by_flag['--hmc-method'].kind is Kind.CHOICE

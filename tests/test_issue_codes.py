@@ -15,7 +15,7 @@ import re
 
 import pytest
 
-from qsiplan.models import ANAT_REFERENCES
+from qsiplan.models import ANAT_REFERENCES, FIELDMAPLESS_METHODS
 from qsiplan.validation import ISSUE_CODES, IssueSpec, describe_issue, error, warning
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[1] / 'qsiplan'
@@ -27,7 +27,8 @@ def _emitted_codes() -> dict[str, set[str]]:
     Constant-string calls to ``error``/``warning`` carry their severity;
     ``make_issue`` sites pick it at runtime and may use either. The
     anatomical-reference codes are emitted with a variable (from the registry
-    tuples), so they are read from ANAT_REFERENCES directly - always errors.
+    tuples), so they are read from ANAT_REFERENCES and FIELDMAPLESS_METHODS
+    directly - always errors.
     """
     emitted: dict[str, set[str]] = {}
     for source in sorted(PACKAGE.glob('*.py')):
@@ -45,8 +46,10 @@ def _emitted_codes() -> dict[str, set[str]]:
                 emitted.setdefault(first.value, set()).update(severities)
     for reference in ANAT_REFERENCES.values():
         emitted.setdefault(reference.missing_anat_issue[0], set()).add('error')
-        if reference.pedir_issue is not None:
-            emitted.setdefault(reference.pedir_issue[0], set()).add('error')
+    for method in FIELDMAPLESS_METHODS.values():
+        for issue in (method.pedir_issue, method.readout_issue):
+            if issue is not None:
+                emitted.setdefault(issue[0], set()).add('error')
     return emitted
 
 

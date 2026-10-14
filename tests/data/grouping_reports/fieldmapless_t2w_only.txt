@@ -1,0 +1,50 @@
+DWI grouping for sub-01
+=======================
+
+Output "sub-01_dir-AP" (MultipartID auto+concat+0 [inferred]): 1 series
+  Distortion group sub-01_dir-AP (PE j-, TRT 0.05s):
+    - sub-01_dir-AP_dwi.nii.gz
+    corrected by: nothing (no fieldmap found)
+
+Fieldmap estimations: none found.
+
+Notes:
+  ERROR [synb0-requires-t1w]: The fieldmap-less correction needs a SyNb0 synthetic b=0, but this subject has no T1w image to synthesize it from. Pass --sdc-anat-reference none to leave these series uncorrected.
+
+Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
+-----------------------------------------------------------------------
+
+Output "sub-01_dir-AP" (1 single series):
+  1. The series is denoised.
+  2. eddy corrects head motion and eddy currents. No fieldmap could be set up (the fieldmap-less correction could not be used for this series): susceptibility distortion is NOT corrected.
+  3. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP' has no fieldmap and the fieldmap-less correction could not be set up for it (see the errors): no susceptibility distortion correction will be performed.
+
+Processing preview: TORTOISE + DRBUDDI (--hmc-method tortoise --sdc-method drbuddi)
+-----------------------------------------------------------------------------------
+
+Output "sub-01_dir-AP" (1 single series):
+  1. The series is denoised.
+  2. TORTOISE DIFFPREP corrects head motion and eddy currents.
+  3. No fieldmap could be set up (the fieldmap-less correction could not be used for this series): susceptibility distortion is NOT corrected.
+  4. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP' has no fieldmap and the fieldmap-less correction could not be set up for it (see the errors): no susceptibility distortion correction will be performed.
+
+Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup+drbuddi)
+---------------------------------------------------------------------------------------
+
+Output "sub-01_dir-AP" (1 single series):
+  1. The series is denoised.
+  2. No fieldmap could be set up (the fieldmap-less correction could not be used for this series): susceptibility distortion is NOT corrected.
+  3. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP' has no fieldmap and the fieldmap-less correction could not be set up for it (see the errors): no susceptibility distortion correction will be performed.
+
+Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
+-------------------------------------------------------------------------------------
+
+Output "sub-01_dir-AP" (1 single series):
+  1. The series is denoised.
+  2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
+  3. No fieldmap could be set up (the fieldmap-less correction could not be used for this series): susceptibility distortion is NOT corrected.
+  4. The corrected series is written as one output file.
+  !! WARNING [no-sdc]: Output 'sub-01_dir-AP' has no fieldmap and the fieldmap-less correction could not be set up for it (see the errors): no susceptibility distortion correction will be performed.

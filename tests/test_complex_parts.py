@@ -144,7 +144,9 @@ def test_real_and_imaginary_parts_are_ignored_with_a_warning(tmp_path):
 
 
 def test_orphan_phase_is_ignored_with_a_warning(tmp_path):
-    grouping = load_scenario('complex_orphan_phase', tmp_path, strict=False)
+    grouping = load_scenario(
+        'complex_orphan_phase', tmp_path, strict=False, sdc_anat_reference='none'
+    )
 
     (issue,) = _issues(grouping, 'phase-without-magnitude')
     assert issue.severity == 'warning'
@@ -197,7 +199,7 @@ def test_plan_carries_the_phase_companions(tmp_path, selection):
 
 def test_grouping_serialization_carries_parts(tmp_path):
     payload = load_scenario('nibs_style', tmp_path / 'complex', strict=False).to_dict()
-    assert payload['schema_version'] == 2
+    assert payload['schema_version'] == 3
     dwi_entries = {p: e for p, e in payload['files'].items() if e['datatype'] == 'dwi'}
     assert dwi_entries
     for path, entry in dwi_entries.items():

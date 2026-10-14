@@ -12,7 +12,7 @@ inferred PEPOLAR on all three backends          hcp_style
 IntendedFor epi fmap + fmap-only b=0 extras     abcd_style
 GRE phasediff + curated-boundary outputs        two_gre_fmaps
 uncorrected by default (anat SDC is opt-in)     fieldmapless_t2w
-auto ladder: T2w-only inferred T2Wreg           fieldmapless_t2w_auto
+auto ladder: T2w-only inferred unpile           fieldmapless_t2w_auto
 inverted T1w (--sdc-anat-reference invt1w)      fieldmapless_t1w_only_syn
 SyNb0 (--sdc-anat-reference synb0)              fieldmapless_t1w_only_synb0
 SyNb0 overriding a real T2w structural target   stranded_synb0
@@ -24,7 +24,7 @@ virtual acqs: curated fields isolated combined  virtual_acq_isolated_fields
 cross-axis pooling (DRBUDDI infeasible)         cross_axis_unpaired
 cross-axis split (per-axis DRBUDDI, recombined) cross_axis_b0field
 multi-readout split (per-readout DRBUDDI)       multi_readout
-matched pair + singleton (DRBUDDI + T2Wreg)     partial_pair
+matched pair + singleton (DRBUDDI + unpile)     partial_pair
 shelled/non-shelled tags + mixture warning      shell_mix
 eddy-requires-shelled error                     nonshelled_pair
 =============================================== ============================
@@ -67,9 +67,24 @@ GOLDEN_CASES = [
     ('gre_rpe_intendedfor', {}, 'gre_rpe_intendedfor'),
     ('gre_rpe_curated', {}, 'gre_rpe_curated'),
     ('fieldmapless_t2w', {}, 'fieldmapless_t2w'),
-    ('fieldmapless_t2w_only', {'sdc_anat_reference': 'auto'}, 'fieldmapless_t2w_auto'),
-    ('fieldmapless_t1w_only', {'sdc_anat_reference': 'invt1w'}, 'fieldmapless_t1w_only_syn'),
+    ('fieldmapless_t2w', {'sdc_anat_reference': 'none'}, 'fieldmapless_t2w_none'),
+    ('fieldmapless_t2w_only', {}, 'fieldmapless_t2w_only'),
+    (
+        'fieldmapless_t2w_only',
+        {'fieldmapless_method': 'unpile', 'sdc_anat_reference': 't2w'},
+        'fieldmapless_t2w_only_unpile',
+    ),
+    (
+        'fieldmapless_t1w_only',
+        {'fieldmapless_method': 'syn', 'sdc_anat_reference': 'invt1w'},
+        'fieldmapless_t1w_only_syn',
+    ),
     ('fieldmapless_t1w_only', {'sdc_anat_reference': 'synb0'}, 'fieldmapless_t1w_only_synb0'),
+    (
+        'fieldmapless_t1w_only',
+        {'fieldmapless_method': 'syn', 'sdc_anat_reference': 'synb0'},
+        'fieldmapless_t1w_only_synsynb0',
+    ),
     ('partial_curation_stranded', {'sdc_anat_reference': 'synb0'}, 'stranded_synb0'),
     ('missing_pedir', {}, 'missing_pedir'),
     ('partial_curation', {}, 'partial_curation'),
@@ -99,12 +114,20 @@ FLAG_VARIANTS = [
     ('complex_pepolar', {'separate_all_dwis': True}),
     ('reshim', {'ignore_shims': True}),
     ('abcd_style', {'ignore_fieldmaps': True}),
-    ('t2w_hcp', {'sdc_anat_reference': 't2w', 'force_sdc_anat_reference': True}),
+    (
+        't2w_hcp',
+        {
+            'fieldmapless_method': 'unpile',
+            'sdc_anat_reference': 't2w',
+            'force_sdc_anat_reference': True,
+        },
+    ),
     ('fieldmapless_t1w_only', {'sdc_anat_reference': 'synb0'}),
-    ('fieldmapless_t1w_only', {'sdc_anat_reference': 'invt1w'}),
+    ('fieldmapless_t1w_only', {'fieldmapless_method': 'syn', 'sdc_anat_reference': 'invt1w'}),
     ('missing_pedir', {'sdc_anat_reference': 'synb0'}),
     ('fov_oblique', {'ignore_fov': True}),
-    ('fieldmapless_t2w', {'sdc_anat_reference': 'auto'}),
+    ('fieldmapless_t2w', {'fieldmapless_method': 'unpile', 'sdc_anat_reference': 'synb0'}),
+    ('missing_pedir', {'sdc_anat_reference': 'none'}),
     ('t2w_hcp', {'sdc_anat_reference': 'synb0', 'force_sdc_anat_reference': True}),
 ]
 

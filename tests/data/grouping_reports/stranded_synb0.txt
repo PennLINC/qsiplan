@@ -7,13 +7,13 @@ Output "sub-01" (MultipartID auto+concat+0 [inferred]): 3 series
     corrected by: pepolar01 [curated]
   Distortion group sub-01_dir-AP_run-2 (PE j-, TRT 0.05s):
     - sub-01_dir-AP_run-2_dwi.nii.gz
-    corrected by: auto+synb0 [cli-override]
+    corrected by: auto+synb0 [inferred]
   Distortion group sub-01_dir-PA_run-1 (PE j, TRT 0.05s):
     - sub-01_dir-PA_run-1_dwi.nii.gz
     corrected by: pepolar01 [curated]
 
 Fieldmap estimations:
-  auto+synb0 [cli-override]: SyNb0 synthetic b=0
+  auto+synb0 [inferred]: SyNb0 synthetic b=0
     - sub-01_T1w.nii.gz
   pepolar01 [curated]: PEPOLAR (reverse phase-encoding)
     - sub-01_dir-AP_run-1_dwi.nii.gz
@@ -21,7 +21,7 @@ Fieldmap estimations:
     phase encoding axes: j (bidirectional)
 
 Notes:
-  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz: this session has curated fieldmap metadata, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series. Add B0FieldIdentifier/B0FieldSource to correct them (fieldmap-less correction can still be requested at the command line).
+  WARNING [reverse-pe-not-inferred]: sub-01_dir-AP_run-2_dwi.nii.gz: this session has curated fieldmap metadata, so QSIPrep does not infer reverse phase-encoding pairings for the remaining series; they get the fieldmap-less correction instead. Add B0FieldIdentifier/B0FieldSource to pair them.
 
 Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 -----------------------------------------------------------------------
@@ -44,11 +44,11 @@ Output "sub-01" (3 series):
   1. Each series is denoised on its own. The 3 series span 2 correction units; each unit is concatenated and corrected in its own pipeline.
   2. Correction unit 'sub-01_dir-AP_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz):
   3. TORTOISE DIFFPREP corrects head motion and eddy currents.
-  4. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); DIFFPREP registers the data to it (T2Wreg mode) to estimate and correct distortion.
+  4. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the DIFFPREP-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the DIFFPREP output.
   5. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
   6. TORTOISE DIFFPREP corrects head motion and eddy currents separately for each distortion group (sub-01_dir-AP_run-1, sub-01_dir-PA_run-1).
   7. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_dir-PA_run-1) and blip-down (sub-01_dir-AP_run-1) data and applies the correction to every volume.
-     DRBUDDI additionally uses a SyNb0 synthetic b=0 (from sub-01_T1w.nii.gz, in place of the T2w image) as a structural registration target (multimodal correction).
+     DRBUDDI additionally uses the T2w image (sub-01_T2w.nii.gz) as a structural registration target (multimodal correction).
   8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
 
 Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup+drbuddi)
@@ -57,14 +57,13 @@ Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup
 Output "sub-01" (3 series):
   1. Each series is denoised on its own. The 3 series span 2 correction units; each unit is concatenated and corrected in its own pipeline.
   2. Correction unit 'sub-01_dir-AP_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz):
-  3. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume and eddy applies the resulting field.
-  4. T2Wreg registers the eddy-corrected b=0 to the synthetic b=0, refining the TOPUP correction.
-  5. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
-  6. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
-  7. eddy corrects head motion and eddy currents using the TOPUP field.
-  8. DRBUDDI re-estimates distortion along the j axis from the eddy-corrected blip-up/blip-down dMRI series, refining the TOPUP correction.
-     DRBUDDI additionally uses a SyNb0 synthetic b=0 (from sub-01_T1w.nii.gz, in place of the T2w image) as a structural registration target (multimodal correction).
-  9. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
+  3. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume, and eddy corrects head motion, eddy currents, and susceptibility distortion in one model using the resulting field. With no reverse phase-encoded dMRI series the DRBUDDI second stage does not run.
+  4. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
+  5. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
+  6. eddy corrects head motion and eddy currents using the TOPUP field.
+  7. DRBUDDI re-estimates distortion along the j axis from the eddy-corrected blip-up/blip-down dMRI series, refining the TOPUP correction.
+     DRBUDDI additionally uses the T2w image (sub-01_T2w.nii.gz) as a structural registration target (multimodal correction).
+  8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
 
 Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
 -------------------------------------------------------------------------------------
@@ -73,9 +72,9 @@ Output "sub-01" (3 series):
   1. Each series is denoised on its own. The 3 series span 2 correction units; each unit is concatenated and corrected in its own pipeline.
   2. Correction unit 'sub-01_dir-AP_run-2' (sub-01_dir-AP_run-2_dwi.nii.gz):
   3. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
-  4. The selected correction is a SyNb0 synthetic-b=0 estimation, which the SHORELine path does not implement: distortion is NOT corrected on this path.
+  4. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_T1w.nii.gz) and the SHORELine-corrected b=0; TOPUP pairs the two (the synthetic b=0 as a zero-readout-time volume), and the resulting field is applied to unwarp the corrected series.
   5. Correction unit 'sub-01_run-1' (sub-01_dir-AP_run-1_dwi.nii.gz, sub-01_dir-PA_run-1_dwi.nii.gz):
   6. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
   7. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_dir-PA_run-1) and blip-down (sub-01_dir-AP_run-1) data and applies the correction to every volume.
-     DRBUDDI additionally uses a SyNb0 synthetic b=0 (from sub-01_T1w.nii.gz, in place of the T2w image) as a structural registration target (multimodal correction).
+     DRBUDDI additionally uses the T2w image (sub-01_T2w.nii.gz) as a structural registration target (multimodal correction).
   8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.

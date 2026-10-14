@@ -50,7 +50,7 @@ from .adapters import (
 )
 from .bids import parse_file_entities
 from .catalog import Bids2TableCatalog, DatasetCatalog
-from .inference import build_grouping
+from .inference import build_grouping, fieldmapless_combination_error
 from .interactive import explorer_view, render_explorer_html, render_html, render_report_segment
 from .metadata import index_subject
 from .methods import (
@@ -66,6 +66,8 @@ from .methods import (
 from .models import (
     ANAT_REFERENCE_CHOICES,
     ANAT_REFERENCES,
+    FIELDMAPLESS_METHOD_CHOICES,
+    FIELDMAPLESS_METHODS,
     AnatReference,
     ConcatenationGroup,
     CorrectionMethod,
@@ -91,10 +93,11 @@ from .validation import (
 __all__ = [
     'ANAT_REFERENCE_CHOICES',
     'ANAT_REFERENCES',
+    'FIELDMAPLESS_METHOD_CHOICES',
+    'FIELDMAPLESS_METHODS',
     'AnatReference',
     'ISSUE_CODES',
     'IssueSpec',
-    'describe_issue',
     'Bids2TableCatalog',
     'HMC_CAPABILITIES',
     'SDC_CAPABILITIES',
@@ -114,17 +117,19 @@ __all__ = [
     'PreprocUnit',
     'Provenance',
     'SdcTool',
-    'assembly_to_sidecar',
-    'build_dwi_grouping',
-    'combined_key',
-    'compile_plan',
     'ExecutionPlan',
     'OutputAssembly',
     'PlanStage',
     'ProcessingRun',
+    'assembly_to_sidecar',
+    'build_dwi_grouping',
+    'combined_key',
+    'compile_plan',
     'concatenation_scheme',
+    'describe_issue',
     'describe_processing',
     'explorer_view',
+    'fieldmapless_combination_error',
     'full_report',
     'index_subject',
     'parse_combined_key',
@@ -148,10 +153,11 @@ def build_dwi_grouping(
     ignore_shims=False,
     ignore_fov=False,
     ignore_sdc=False,
-    sdc_anat_reference='none',
+    sdc_anat_reference='synb0',
     force_sdc_anat_reference=False,
     distortion_group_merge='concat',
     b0_threshold=None,
+    fieldmapless_method='topup',
     strict=True,
 ):
     """Group one subject's DWI scans.
@@ -176,8 +182,8 @@ def build_dwi_grouping(
         Do not index ``fmap/``. The reverse phase-encoding DWI heuristic
         still applies.
     ignore_t2w : bool
-        Do not index T2w images, so no T2w is available for T2Wreg
-        fieldmap-less correction (``--ignore t2w``). T1w indexing is
+        Do not index T2w images, so no T2w is available as the fieldmap-less
+        correction's reference (``--ignore t2w``). T1w indexing is
         unaffected; a fieldmap-less series then falls back to SyNb0/SyN if
         requested, or is left uncorrected.
     ignore_pepolar_dwis : bool
@@ -200,16 +206,17 @@ def build_dwi_grouping(
         left uncorrected but is still grouped and concatenated for HMC. Stronger
         than ``ignore_fieldmaps`` (which only skips ``fmap/``).
     sdc_anat_reference : str
-        Which anatomical-derived source image may drive fieldmap-less SDC, as
-        a FALLBACK for series that no fieldmap reaches: ``'synb0'`` (a
-        synthetic b=0 from the T1w), ``'t2w'`` (the real T2w, TORTOISE
-        T2Wreg), ``'invt1w'`` (the inverted-contrast T1w - the standalone
-        niworkflows SyN-SDC prior), ``'auto'`` (resolved per subject: a T1w
-        selects synb0, else a T2w selects t2w, else nothing with a warning;
-        ``'invt1w'`` is unreachable via auto and must be requested
-        explicitly), or ``'none'`` (default: no anatomical SDC ever).
-        Explicit synb0/invt1w error if no T1w exists or a target series lacks
-        PhaseEncodingDirection; explicit t2w errors if no T2w exists.
+        Which anatomical-derived image the fieldmap-less correction uses, as a
+        FALLBACK for series that no fieldmap reaches: ``'synb0'`` (default; a
+        synthetic b=0 from the T1w), ``'invt1w'`` (the inverted-contrast T1w,
+        SyN only), ``'t2w'`` (the real T2w, unpile only), or ``'none'`` (no
+        fieldmap-less SDC). A series the correction cannot handle (no T1w/T2w,
+        no PhaseEncodingDirection or TotalReadoutTime where needed) is an error.
+    fieldmapless_method : str
+        The fieldmap-less correction: ``'topup'`` (default; SyNb0 + TOPUP),
+        ``'syn'`` (ANTs SyN; with ``'synb0'`` or ``'invt1w'``), or
+        ``'unpile'`` (a readout-model fit of the b=0; with ``'synb0'`` or
+        ``'t2w'``, after any head motion method).
     force_sdc_anat_reference : bool
         Escalate the ``sdc_anat_reference`` method from fallback to OVERRIDE: it
         replaces the fieldmap application for every DWI series. An error when
@@ -254,6 +261,7 @@ def build_dwi_grouping(
         sdc_anat_reference=sdc_anat_reference,
         force_sdc_anat_reference=force_sdc_anat_reference,
         distortion_group_merge=distortion_group_merge,
+        fieldmapless_method=fieldmapless_method,
         extra_issues=index_issues,
     )
     if strict:

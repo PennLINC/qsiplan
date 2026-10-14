@@ -28,8 +28,9 @@ from .bids import _parse_bids_name, is_bids_label
 from .models import (
     ANAT_REFERENCE_CHOICES,
     ANAT_REFERENCES,
-    AUTO_ANAT_REFERENCES,
     AUTO_PREFIX,
+    FIELDMAPLESS_METHOD_CHOICES,
+    FIELDMAPLESS_METHODS,
     ConcatenationGroup,
     CorrectionMethod,
     CorrectionUnit,
@@ -50,7 +51,7 @@ _METHOD_RANK = {
     CorrectionMethod.PHASEDIFF: 2,
     CorrectionMethod.PHASES: 3,
     CorrectionMethod.SYNB0: 4,
-    CorrectionMethod.T2WREG: 5,
+    CorrectionMethod.UNPILE: 5,
     CorrectionMethod.NIPREPS_SYN: 6,
 }
 _PROVENANCE_RANK = {
@@ -88,7 +89,7 @@ def _classify_method(records: list[FileRecord]) -> CorrectionMethod | None:
     # An anatomical source marks a fieldmap-less registration estimation, even
     # when EPI files share the identifier (they are its registration movers).
     if suffixes.intersection(('T1w', 'T2w')):
-        return CorrectionMethod.T2WREG
+        return CorrectionMethod.UNPILE
     if any(record.is_epi_like for record in records):
         return CorrectionMethod.PEPOLAR
     return None
@@ -111,8 +112,13 @@ def _make_estimation(
     method: CorrectionMethod,
     records: list[FileRecord],
     provenance: Provenance,
+    reference: str | None = None,
 ) -> FieldmapEstimation:
     axes, bidirectional = _pe_axes(records)
+    if reference is None and method is CorrectionMethod.UNPILE:
+        # A curated anatomical estimation registers to the T2w when it lists one.
+        if any(record.suffix == 'T2w' for record in records):
+            reference = 't2w'
     return FieldmapEstimation(
         b0field_id=b0field_id,
         method=method,
@@ -120,6 +126,7 @@ def _make_estimation(
         provenance=provenance,
         pe_axes=axes,
         bidirectional_axes=bidirectional,
+        reference=reference,
     )
 
 
@@ -639,11 +646,36 @@ def _anat_for_session(records, session, suffix, *, cross_session=True):
     return []
 
 
-#: ``sdc_anat_reference`` names the anatomical-derived SOURCE image (a synthetic
-#: b=0, the real T2w, or the inverted-contrast T1w); which engine consumes it
-#: is the method axis's business. Every per-reference fact - method, id stem,
-#: source suffix, and the missing-anatomy / missing-PE-direction errors - comes
-#: from :data:`~.models.ANAT_REFERENCES`, the one table for the whole package.
+#: ``fieldmapless_method`` names the correction and ``sdc_anat_reference`` the
+#: anatomical-derived image it uses (a synthetic b=0, the inverted-contrast T1w,
+#: or the real T2w). Every per-method and per-reference fact - estimation
+#: method, id stem, source suffix, and the missing-anatomy / missing-metadata
+#: errors - comes from :data:`~.models.FIELDMAPLESS_METHODS` and
+#: :data:`~.models.ANAT_REFERENCES`.
+
+
+def fieldmapless_combination_error(
+    fieldmapless_method: str, sdc_anat_reference: str
+) -> str | None:
+    """Why a ``(--sdc-fieldmapless-method, --sdc-anat-reference)`` pair is invalid, or ``None``."""
+    if fieldmapless_method not in FIELDMAPLESS_METHODS:
+        choices = ', '.join(FIELDMAPLESS_METHOD_CHOICES)
+        return f'--sdc-fieldmapless-method must be one of {choices}, not {fieldmapless_method!r}.'
+    if sdc_anat_reference not in ANAT_REFERENCE_CHOICES:
+        choices = ', '.join(ANAT_REFERENCE_CHOICES)
+        return f'--sdc-anat-reference must be one of {choices}, not {sdc_anat_reference!r}.'
+    references = FIELDMAPLESS_METHODS[fieldmapless_method].references
+    if sdc_anat_reference != 'none' and sdc_anat_reference not in references:
+        takers = [
+            m.name for m in FIELDMAPLESS_METHODS.values() if sdc_anat_reference in m.references
+        ]
+        return (
+            f'--sdc-fieldmapless-method {fieldmapless_method} cannot use '
+            f'--sdc-anat-reference {sdc_anat_reference}; it takes '
+            f'{" or ".join(references)}. To use {sdc_anat_reference}, also pass '
+            f'--sdc-fieldmapless-method {" or ".join(takers)}.'
+        )
+    return None
 
 
 def resolve_fieldmapless(
@@ -652,49 +684,51 @@ def resolve_fieldmapless(
     application: dict[str, str | None],
     provenance: dict[str, Provenance],
     candidates: dict[str, tuple[str, ...]],
-    sdc_anat_reference: str = 'none',
+    sdc_anat_reference: str = 'synb0',
     force_sdc_anat_reference: bool = False,
+    fieldmapless_method: str = 'topup',
 ):
-    """Apply the selected anatomical SDC source to the application map (in place).
+    """Apply the selected fieldmap-less correction to the application map (in place).
 
-    ``sdc_anat_reference`` names at most ONE anatomical-derived source image for
-    fieldmap-less correction - each corrects a series entirely on its own,
-    never layered with another:
+    ``fieldmapless_method`` and ``sdc_anat_reference`` select ONE fieldmap-less
+    correction - each corrects a series entirely on its own, never layered with
+    another:
 
-    - ``'synb0'``: a SyNb0 synthetic-b=0 estimation from the T1w.
-    - ``'t2w'``: a T2w-registration (T2Wreg) estimation from the T2w.
-    - ``'invt1w'``: the inverted-contrast T1w (nipreps-style SyN prior) - the
-      standalone niworkflows SyN-SDC estimation.
-    - ``'auto'``: resolved per session from that session's in-scope anatomy - a
-      T1w selects ``'synb0'``, otherwise a T2w selects ``'t2w'``, otherwise
-      nothing (with a warning), so different sessions may resolve differently.
-      ``'invt1w'`` is unreachable through ``'auto'``, since ``'synb0'`` outranks
-      it whenever a T1w exists; only an explicit ``--sdc-anat-reference invt1w``
-      selects it.
-    - ``'none'`` (default): no anatomical SDC ever - series no fieldmap
-      reaches are left uncorrected.
+    - ``'topup'`` + ``'synb0'`` (the default): a SyNb0 synthetic b=0 from the
+      T1w, paired with the DWI's b=0 in TOPUP.
+    - ``'syn'`` + ``'synb0'`` or ``'invt1w'``: ANTs SyN registering the b=0 to
+      the synthetic b=0, or to the inverted-contrast T1w (nipreps-style).
+    - ``'unpile'`` + ``'synb0'`` or ``'t2w'``: unpile, a readout-model fit of the b=0
+      to the synthetic b=0 or the T2w, after any head motion method.
+    - ``sdc_anat_reference='none'``: series no fieldmap reaches stay uncorrected.
 
-    The selected method is a FALLBACK: it corrects only series that no
+    The selected correction is a FALLBACK: it corrects only series that no
     fieldmap reaches. ``force_sdc_anat_reference`` escalates it to an OVERRIDE that
     replaces the fieldmap application for ALL DWI series; forcing with
     ``sdc_anat_reference='none'`` selects nothing to force and is an error.
 
     Anatomical estimations are created per session, with the anatomical
     image(s) as their only sources - the DWIs they correct are targets, since
-    each output registers its own b=0. A DWI without a PhaseEncodingDirection
-    cannot be corrected along an axis: SyNb0 and SyN-SDC skip such series
-    with a hard error (T2Wreg is a pure registration and corrects them).
+    each output registers its own b=0. A series the correction cannot handle
+    (no anatomy, no PhaseEncodingDirection where it needs one, no
+    TotalReadoutTime where it needs one) is a hard error that names
+    ``--sdc-anat-reference none`` as the way to leave it uncorrected.
     """
     issues: list[GroupingIssue] = []
     dwi_records = {record.path: record for record in records if record.is_dwi}
+
+    invalid = fieldmapless_combination_error(fieldmapless_method, sdc_anat_reference)
+    if invalid:
+        issues.append(error('fieldmapless-combination-invalid', invalid))
+        return issues
 
     if force_sdc_anat_reference and sdc_anat_reference == 'none':
         names = ', '.join(ANAT_REFERENCES)
         issues.append(
             error(
                 'force-sdc-anat-reference-needs-method',
-                '--force sdc-anat-reference requires an anatomical SDC method to force: '
-                f'pass --sdc-anat-reference {names}, or auto.',
+                '--force sdc-anat-reference requires an anatomical SDC reference to force: '
+                f'pass --sdc-anat-reference {names}.',
             )
         )
         return issues
@@ -702,31 +736,12 @@ def resolve_fieldmapless(
     if sdc_anat_reference == 'none':
         return issues
 
-    prov = Provenance.FORCED
-    if sdc_anat_reference == 'auto' and not force_sdc_anat_reference:
-        prov = Provenance.INFERRED
+    spec = FIELDMAPLESS_METHODS[fieldmapless_method]
+    reference = ANAT_REFERENCES[sdc_anat_reference]
+    prov = Provenance.FORCED if force_sdc_anat_reference else Provenance.INFERRED
 
-    def _resolve_method(session):
-        """The concrete method for one session under ``'auto'``.
-
-        Prefers this session's own or shared (session-less) anatomy - a T1w
-        (synb0) before a T2w (t2wreg) - so a session with its own T2w is not
-        overridden by another session's T1w; only when neither is present does
-        auto reach across sessions. An explicit method is returned unchanged.
-        """
-        if sdc_anat_reference != 'auto':
-            return sdc_anat_reference
-        for cross in (False, True):
-            for reference in AUTO_ANAT_REFERENCES:
-                if _anat_for_session(
-                    records, session, reference.source_suffix, cross_session=cross
-                ):
-                    return reference.name
-        return 'none'
-
-    def _apply(paths, session, method_name):
-        reference = ANAT_REFERENCES[method_name]
-        method, id_stem, suffix = reference.method, reference.id_stem, reference.source_suffix
+    def _apply(paths, session):
+        suffix = reference.source_suffix
         anat = _anat_for_session(records, session, suffix)
         if not anat:
             return False
@@ -739,7 +754,7 @@ def resolve_fieldmapless(
             issues.append(
                 warning(
                     'cross-session-anat-reference',
-                    f'ses-{session} has no {suffix} for {method_name} SDC, so the '
+                    f'ses-{session} has no {suffix} for {reference.name} SDC, so the '
                     f'{suffix} from {sessions_txt} is used instead. Anatomy differs '
                     'between sessions (head position, and real change in longitudinal '
                     'data) - verify this is appropriate, or isolate sessions with '
@@ -747,12 +762,14 @@ def resolve_fieldmapless(
                     tuple(paths),
                 )
             )
-        id_parts = [AUTO_PREFIX + id_stem]
+        id_parts = [AUTO_PREFIX + spec.id_stems[reference.name]]
         if session:
             id_parts.append(f'ses-{session}')
         b0field_id = '+'.join(id_parts)
         if b0field_id not in estimations:
-            estimations[b0field_id] = _make_estimation(b0field_id, method, anat, prov)
+            estimations[b0field_id] = _make_estimation(
+                b0field_id, spec.method, anat, prov, reference=reference.name
+            )
         for path in paths:
             application[path] = b0field_id
             provenance[path] = prov
@@ -763,40 +780,25 @@ def resolve_fieldmapless(
     for path, record in sorted(dwi_records.items()):
         by_session[record.session].append(path)
 
-    auto_unresolved: list[str] = []  # 'auto' sessions with no anatomy in scope
     for session, paths in sorted(by_session.items(), key=lambda kv: str(kv[0])):
         if force_sdc_anat_reference:
             targets = list(paths)
         else:
             targets = [p for p in paths if application[p] is None]
-        if not targets:
-            continue
-        method_name = _resolve_method(session)
-        if method_name == 'none':
-            # Only reachable through 'auto' when this session has no anatomy.
-            auto_unresolved.extend(targets)
-            continue
-        reference = ANAT_REFERENCES[method_name]
-        if reference.pedir_issue is not None:
-            missing_pedir = [p for p in targets if dwi_records[p].signature.pe_dir is None]
-            if missing_pedir:
-                code, message = reference.pedir_issue
-                issues.append(error(code, message, tuple(missing_pedir)))
-                targets = [p for p in targets if p not in missing_pedir]
-        if targets and not _apply(targets, session, method_name):
+        for attribute, issue in (
+            ('pe_dir', spec.pedir_issue),
+            ('readout_time', spec.readout_issue),
+        ):
+            if issue is None or not targets:
+                continue
+            missing = [p for p in targets if getattr(dwi_records[p].signature, attribute) is None]
+            if missing:
+                code, message = issue
+                issues.append(error(code, message, tuple(missing)))
+                targets = [p for p in targets if p not in missing]
+        if targets and not _apply(targets, session):
             code, message = reference.missing_anat_issue
             issues.append(error(code, message, tuple(targets)))
-
-    if auto_unresolved:
-        issues.append(
-            warning(
-                'sdc-anat-reference-auto-no-anatomicals',
-                '--sdc-anat-reference auto found no T1w or T2w for '
-                f'{len(auto_unresolved)} DWI series, so they receive no anatomical '
-                'susceptibility distortion correction.',
-                tuple(sorted(auto_unresolved)),
-            )
-        )
 
     return issues
 
@@ -1120,9 +1122,10 @@ def build_grouping(
     ignore_shims: bool = False,
     ignore_fov: bool = False,
     ignore_sdc: bool = False,
-    sdc_anat_reference: str | None = 'none',
+    sdc_anat_reference: str | None = 'synb0',
     force_sdc_anat_reference: bool = False,
     distortion_group_merge: str | None = 'concat',
+    fieldmapless_method: str | None = 'topup',
     extra_issues: list[GroupingIssue] | None = None,
 ) -> DWIGrouping:
     """Assemble the full :class:`~.models.DWIGrouping` from indexed records.
@@ -1137,12 +1140,11 @@ def build_grouping(
             f"distortion_group_merge must be 'concat', 'average', or 'none', "
             f'not {distortion_group_merge!r}.'
         )
-    sdc_anat_reference = sdc_anat_reference or 'none'
-    if sdc_anat_reference not in ANAT_REFERENCE_CHOICES:
-        choices = ', '.join(repr(choice) for choice in ANAT_REFERENCE_CHOICES)
-        raise ValueError(
-            f'sdc_anat_reference must be one of {choices}, not {sdc_anat_reference!r}.'
-        )
+    sdc_anat_reference = sdc_anat_reference or 'synb0'
+    fieldmapless_method = fieldmapless_method or 'topup'
+    invalid = fieldmapless_combination_error(fieldmapless_method, sdc_anat_reference)
+    if invalid:
+        raise ValueError(invalid)
     policy = GroupingPolicy(
         separate_all_dwis=separate_all_dwis,
         ignore_fieldmaps=ignore_fieldmaps,
@@ -1152,6 +1154,7 @@ def build_grouping(
         ignore_fov=ignore_fov,
         ignore_sdc=ignore_sdc,
         sdc_anat_reference=sdc_anat_reference,
+        fieldmapless_method=fieldmapless_method,
         force_sdc_anat_reference=force_sdc_anat_reference,
         distortion_group_merge=distortion_group_merge,
     )
@@ -1173,6 +1176,16 @@ def build_grouping(
         ignored_sources: set[str] = set()
         if ignore_pepolar_dwis:
             ignored_sources = drop_dwi_pepolar_estimations(records, estimations, targets, issues)
+        if ignore_fieldmaps:
+            # fmap/ was not indexed, so a DWI's B0FieldSource naming a fieldmap is
+            # intentionally unresolved, not an error.
+            ignored_sources |= {
+                source_id
+                for record in records
+                if record.is_dwi
+                for source_id in record.b0field_sources
+                if source_id not in estimations
+            }
 
         application, app_provenance, candidates, application_issues = resolve_application(
             records, estimations, targets, ignored_sources=frozenset(ignored_sources)
@@ -1188,6 +1201,7 @@ def build_grouping(
                 candidates,
                 sdc_anat_reference=sdc_anat_reference,
                 force_sdc_anat_reference=force_sdc_anat_reference,
+                fieldmapless_method=fieldmapless_method,
             )
         )
 
@@ -1204,7 +1218,7 @@ def build_grouping(
                     del estimations[b0field_id]
             else:
                 consequence = (
-                    'is not applied to any DWI series; it initializes DRBUDDI or T2Wreg '
+                    'is not applied to any DWI series; it initializes DRBUDDI or unpile '
                     'where those correct a series it lists.'
                     if estimation.is_gre and b0field_id in candidate_ids
                     else 'does not correct any DWI series.'

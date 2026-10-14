@@ -1,7 +1,7 @@
 # One phase-encoding axis (j) pooled under one curated B0FieldIdentifier: a
 # matched blip pair (acq-fast, TRT 0.05) plus an unmatched singleton (acq-slow
 # AP, TRT 0.08, no reverse partner). On the TORTOISE path DRBUDDI corrects the
-# pair; the singleton has no opposing blip, so it falls back to T2Wreg (a T2w is
+# pair; the singleton has no opposing blip, so it falls back to unpile (a T2w is
 # present). Both are concatenated into one output.
 '01':
   - anat:

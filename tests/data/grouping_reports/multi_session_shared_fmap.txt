@@ -60,17 +60,17 @@ Output "sub-01_ses-1_dir-AP" (1 single series):
   1. The series is denoised.
   2. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
   3. eddy corrects head motion and eddy currents using the TOPUP field.
-  4. There is no reverse phase-encoded dMRI series for DRBUDDI to refine with, and no T2w or synthetic b=0 for a T2Wreg stage: correction is single-stage (TOPUP + eddy).
+  4. There is no reverse phase-encoded dMRI series for DRBUDDI to refine with: correction is single-stage (TOPUP + eddy).
   5. The corrected series is written as one output file.
-  !! WARNING [drbuddi-refinement-not-useful]: Estimation 'shared_field' has no reverse phase-encoded dMRI series: a DRBUDDI second stage would reuse the same b=0 images TOPUP already consumed and is probably not useful. No T2w or SyNb0 synthetic b=0 is available for a T2Wreg second stage either, so 'sub-01_ses-1_dir-AP' gets single-stage (TOPUP+eddy) correction.
+  !! WARNING [drbuddi-refinement-not-useful]: Estimation 'shared_field' has no reverse phase-encoded dMRI series: a DRBUDDI second stage would reuse the same b=0 images TOPUP already consumed and is probably not useful. 'sub-01_ses-1_dir-AP' gets single-stage (TOPUP+eddy) correction.
 
 Output "sub-01_ses-2_dir-AP" (1 single series):
   1. The series is denoised.
   2. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
   3. eddy corrects head motion and eddy currents using the TOPUP field.
-  4. There is no reverse phase-encoded dMRI series for DRBUDDI to refine with, and no T2w or synthetic b=0 for a T2Wreg stage: correction is single-stage (TOPUP + eddy).
+  4. There is no reverse phase-encoded dMRI series for DRBUDDI to refine with: correction is single-stage (TOPUP + eddy).
   5. The corrected series is written as one output file.
-  !! WARNING [drbuddi-refinement-not-useful]: Estimation 'shared_field' has no reverse phase-encoded dMRI series: a DRBUDDI second stage would reuse the same b=0 images TOPUP already consumed and is probably not useful. No T2w or SyNb0 synthetic b=0 is available for a T2Wreg second stage either, so 'sub-01_ses-2_dir-AP' gets single-stage (TOPUP+eddy) correction.
+  !! WARNING [drbuddi-refinement-not-useful]: Estimation 'shared_field' has no reverse phase-encoded dMRI series: a DRBUDDI second stage would reuse the same b=0 images TOPUP already consumed and is probably not useful. 'sub-01_ses-2_dir-AP' gets single-stage (TOPUP+eddy) correction.
 
 Processing preview: SHORELine + DRBUDDI (--hmc-method shoreline --sdc-method drbuddi)
 -------------------------------------------------------------------------------------

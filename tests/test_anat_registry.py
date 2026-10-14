@@ -23,86 +23,140 @@ from qsiplan.methods import parse_combined_key
 from qsiplan.models import (
     ANAT_REFERENCE_CHOICES,
     ANAT_REFERENCES,
-    AUTO_ANAT_REFERENCES,
+    FIELDMAPLESS_METHOD_CHOICES,
+    FIELDMAPLESS_METHODS,
     CorrectionMethod,
     GroupingPolicy,
 )
 
 REFERENCES = list(ANAT_REFERENCES.values())
+#: Every valid (fieldmap-less method, reference) pair.
+PAIRS = [
+    (method, ANAT_REFERENCES[name])
+    for method in FIELDMAPLESS_METHODS.values()
+    for name in method.references
+]
+
+
+def _pair_id(pair):
+    method, reference = pair
+    return f'{method.name}+{reference.name}'
 
 
 def _codes(issues):
     return {issue.code for issue in issues}
 
 
-def test_choices_are_the_meta_values_plus_the_table():
-    assert ANAT_REFERENCE_CHOICES == ('none', 'auto', *ANAT_REFERENCES)
-    assert len(set(ANAT_REFERENCE_CHOICES)) == len(ANAT_REFERENCE_CHOICES)
+def test_choices_are_none_plus_the_tables():
+    assert ANAT_REFERENCE_CHOICES == ('none', *ANAT_REFERENCES)
+    assert FIELDMAPLESS_METHOD_CHOICES == tuple(FIELDMAPLESS_METHODS)
+    assert GroupingPolicy().fieldmapless_method == 'topup'
+    assert GroupingPolicy().sdc_anat_reference == 'synb0'
 
 
-def test_auto_ladder_is_the_ranked_subset():
-    # 'auto' picks by rank; explicit-only references (no rank) never appear.
-    assert [ref.name for ref in AUTO_ANAT_REFERENCES] == ['synb0', 't2w']
-    assert ANAT_REFERENCES['invt1w'].auto_rank is None
+def test_every_reference_is_used_by_some_method():
+    used = {name for method in FIELDMAPLESS_METHODS.values() for name in method.references}
+    assert used == set(ANAT_REFERENCES)
 
 
-@pytest.mark.parametrize('reference', REFERENCES, ids=lambda r: r.name)
-def test_reference_is_a_cli_choice_and_reads_into_the_policy(reference):
+@pytest.mark.parametrize('pair', PAIRS, ids=_pair_id)
+def test_pair_is_a_cli_choice_and_reads_into_the_policy(pair):
+    method, reference = pair
     parser = argparse.ArgumentParser()
     add_plan_arguments(parser)
-    namespace = parser.parse_args(['--sdc-anat-reference', reference.name])
-    assert policy_from_namespace(namespace).sdc_anat_reference == reference.name
-
-
-@pytest.mark.parametrize('reference', REFERENCES, ids=lambda r: r.name)
-def test_reference_round_trips_through_the_key_parser(reference):
-    policy, _selection = parse_combined_key(
-        f'sdc-anat-reference={reference.name}&hmc-method=eddy&sdc-method=topup'
+    namespace = parser.parse_args(
+        ['--sdc-fieldmapless-method', method.name, '--sdc-anat-reference', reference.name]
     )
-    assert policy.sdc_anat_reference == reference.name
+    policy = policy_from_namespace(namespace)
+    assert (policy.fieldmapless_method, policy.sdc_anat_reference) == (method.name, reference.name)
 
 
-@pytest.mark.parametrize('reference', REFERENCES, ids=lambda r: r.name)
-def test_reference_is_in_the_explorer_grid_fallback_and_forced(reference):
-    pairs = {(p.sdc_anat_reference, p.force_sdc_anat_reference) for p in reachable_policies()}
-    assert (reference.name, False) in pairs
-    assert (reference.name, True) in pairs
+@pytest.mark.parametrize('pair', PAIRS, ids=_pair_id)
+def test_pair_round_trips_through_the_key_parser(pair):
+    method, reference = pair
+    policy, _selection = parse_combined_key(
+        f'fieldmapless-method={method.name}&sdc-anat-reference={reference.name}'
+        '&hmc-method=eddy&sdc-method=topup'
+    )
+    assert (policy.fieldmapless_method, policy.sdc_anat_reference) == (method.name, reference.name)
 
 
-def test_every_reference_is_offered_in_the_dropdown(tmp_path):
+@pytest.mark.parametrize('pair', PAIRS, ids=_pair_id)
+def test_pair_is_in_the_explorer_grid_fallback_and_forced(pair):
+    method, reference = pair
+    triples = {
+        (p.fieldmapless_method, p.sdc_anat_reference, p.force_sdc_anat_reference)
+        for p in reachable_policies()
+    }
+    assert (method.name, reference.name, False) in triples
+    assert (method.name, reference.name, True) in triples
+
+
+def test_every_pair_is_offered_in_the_dropdown(tmp_path):
     grouping = load_scenario('fieldmapless_t2w', tmp_path, strict=False)
     page = render_explorer_html(list(grouping.files.values()), '01')
-    for reference in REFERENCES:
-        assert f'<option value="sdc-anat-reference={reference.name}"' in page
+    assert '<option value="sdc-anat-reference=none"' in page
+    for method, reference in PAIRS:
+        flags = []
+        if method.name != 'topup':
+            flags.append(f'--sdc-fieldmapless-method {method.name}')
+        if reference.name != 'synb0':
+            flags.append(f'--sdc-anat-reference {reference.name}')
+        label = ' '.join(flags) or 'topup + synb0 (default)'
+        assert f'>{label}</option>' in page
 
 
-@pytest.mark.parametrize('reference', REFERENCES, ids=lambda r: r.name)
-def test_reference_creates_its_method_and_names_its_id_stem(tmp_path, reference):
-    # fieldmapless_t2w carries both a T1w and a T2w, so every reference has
-    # its source image; the estimation it creates must carry its method.
+@pytest.mark.parametrize('pair', PAIRS, ids=_pair_id)
+def test_pair_creates_its_method_and_names_its_id_stem(tmp_path, pair):
+    # fieldmapless_t2w carries both a T1w and a T2w, so every pair has its
+    # source image; the estimation it creates must carry the method and reference.
+    method, reference = pair
     grouping = load_scenario(
-        'fieldmapless_t2w', tmp_path, strict=False, sdc_anat_reference=reference.name
+        'fieldmapless_t2w',
+        tmp_path,
+        strict=False,
+        sdc_anat_reference=reference.name,
+        fieldmapless_method=method.name,
     )
     (estimation,) = grouping.estimations.values()
-    assert estimation.method is reference.method
-    assert f'auto+{reference.id_stem}' in grouping.estimations
+    assert estimation.method is method.method
+    assert estimation.reference == reference.name
+    assert estimation.structural_target == reference.structural_target
+    assert f'auto+{method.id_stems[reference.name]}' in grouping.estimations
 
 
-@pytest.mark.parametrize('reference', REFERENCES, ids=lambda r: r.name)
-def test_missing_source_anatomy_emits_the_registered_error(tmp_path, reference):
+def test_invalid_pairs_are_rejected():
+    for method in FIELDMAPLESS_METHODS.values():
+        for name in ANAT_REFERENCES:
+            if name in method.references:
+                continue
+            with pytest.raises(ValueError, match='cannot use'):
+                build_grouping(
+                    [], subject_id='01', sdc_anat_reference=name, fieldmapless_method=method.name
+                )
+
+
+@pytest.mark.parametrize('pair', PAIRS, ids=_pair_id)
+def test_missing_source_anatomy_emits_the_registered_error(tmp_path, pair):
     # A fieldmap-less subject with its anatomicals stripped: no fieldmap
-    # reaches any series, so the reference fallback fires and must fail with
-    # its own registered missing-anatomy code - never a KeyError.
+    # reaches any series, so the fallback fires and must fail with the
+    # reference's own registered missing-anatomy code - never a KeyError.
+    method, reference = pair
     grouping = load_scenario('fieldmapless_t1w_only', tmp_path, strict=False)
     records = [record for record in grouping.files.values() if not record.is_anat]
-    regrouped = build_grouping(records, subject_id='01', sdc_anat_reference=reference.name)
+    regrouped = build_grouping(
+        records,
+        subject_id='01',
+        sdc_anat_reference=reference.name,
+        fieldmapless_method=method.name,
+    )
     assert reference.missing_anat_issue[0] in _codes(regrouped.errors)
 
 
 @pytest.mark.parametrize(
-    'reference', [r for r in REFERENCES if r.pedir_issue is not None], ids=lambda r: r.name
+    'method', [m for m in FIELDMAPLESS_METHODS.values() if m.pedir_issue], ids=lambda m: m.name
 )
-def test_missing_pedir_emits_the_registered_error(tmp_path, reference):
+def test_missing_pedir_emits_the_registered_error(tmp_path, method):
     grouping = load_scenario('fieldmapless_t2w', tmp_path, strict=False)
     records = [
         dataclasses.replace(record, signature=dataclasses.replace(record.signature, pe_dir=None))
@@ -110,16 +164,36 @@ def test_missing_pedir_emits_the_registered_error(tmp_path, reference):
         else record
         for record in grouping.files.values()
     ]
-    regrouped = build_grouping(records, subject_id='01', sdc_anat_reference=reference.name)
-    assert reference.pedir_issue[0] in _codes(regrouped.errors)
+    regrouped = build_grouping(
+        records,
+        subject_id='01',
+        sdc_anat_reference=method.references[0],
+        fieldmapless_method=method.name,
+    )
+    assert method.pedir_issue[0] in _codes(regrouped.errors)
 
 
-def test_t2w_is_a_pure_registration_needing_no_pe_direction():
-    assert ANAT_REFERENCES['t2w'].pedir_issue is None
-    assert ANAT_REFERENCES['t2w'].method is CorrectionMethod.T2WREG
+def test_topup_needs_a_readout_time(tmp_path):
+    grouping = load_scenario('fieldmapless_t2w', tmp_path, strict=False)
+    records = [
+        dataclasses.replace(
+            record, signature=dataclasses.replace(record.signature, readout_time=None)
+        )
+        if record.is_dwi
+        else record
+        for record in grouping.files.values()
+    ]
+    regrouped = build_grouping(records, subject_id='01')
+    assert 'synb0-missing-readout' in _codes(regrouped.errors)
+    assert not regrouped.estimations
+
+
+def test_unpile_needs_the_phase_encoding_direction_and_readout_time():
+    assert FIELDMAPLESS_METHODS['unpile'].pedir_issue is not None
+    assert FIELDMAPLESS_METHODS['unpile'].readout_issue is not None
+    assert FIELDMAPLESS_METHODS['unpile'].method is CorrectionMethod.UNPILE
 
 
 def test_structural_target_kinds_are_registry_values():
     kinds = {ref.structural_target for ref in REFERENCES}
     assert kinds == {'synb0', 't2w', 't1w'}
-    assert GroupingPolicy(sdc_anat_reference='synb0').sdc_anat_reference in ANAT_REFERENCES

@@ -206,40 +206,36 @@ def test_scenario_c_sessionless_anat_is_shared_not_crossed(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Scenario E - mixed contrasts: auto resolves per session, own contrast first
+# Scenario E - mixed contrasts: the SyNb0 default needs a T1w in reach
 # --------------------------------------------------------------------------- #
-def test_scenario_e_auto_prefers_each_sessions_own_contrast(tmp_path):
+def test_scenario_e_subject_wide_borrows_the_other_sessions_t1w(tmp_path):
     root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T2w']}})
-    (wide,) = _plan(root, '01', SessionScope(), sdc_anat_reference='auto').values()
+    (wide,) = _plan(root, '01', SessionScope()).values()
 
-    # ses-01 -> synb0 (its own T1w); ses-02 -> T2Wreg (its own T2w), NOT a
-    # cross-session synb0 borrowed from ses-01.
-    assert wide.estimations['auto+synb0+ses-01'].method is CorrectionMethod.SYNB0
-    assert wide.estimations['auto+t2wreg+ses-02'].method is CorrectionMethod.T2WREG
-    assert 'cross-session-anat-reference' not in _codes(wide)
+    # ses-02 has only a T2w, which does not bring unpile in: its SyNb0 comes
+    # from ses-01's T1w, and the grouping says so.
+    t1w = 'sub-01_ses-01_T1w.nii.gz'
+    for session in ('01', '02'):
+        estimation = wide.estimations[f'auto+synb0+ses-{session}']
+        assert estimation.method is CorrectionMethod.SYNB0
+        assert [source.rsplit('/', 1)[1] for source in estimation.sources] == [t1w]
+    assert 'cross-session-anat-reference' in _codes(wide)
 
 
-def test_scenario_e_sessionwise_matches_per_session_auto(tmp_path):
+def test_scenario_e_sessionwise_needs_each_sessions_own_t1w(tmp_path):
     root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T2w']}})
-    sessionwise = _plan(root, '01', SessionScope(model='sessionwise'), sdc_anat_reference='auto')
+    sessionwise = _plan(root, '01', SessionScope(model='sessionwise'))
     assert _methods(sessionwise['sub-01_ses-01']) == {CorrectionMethod.SYNB0}
-    assert _methods(sessionwise['sub-01_ses-02']) == {CorrectionMethod.T2WREG}
+    assert 'synb0-requires-t1w' in _codes(sessionwise['sub-01_ses-02'])
 
-
-def test_auto_grouping_distinct_from_concrete_methods_across_sessions(tmp_path):
-    """With per-session 'auto', a subject whose sessions carry different
-    anatomicals groups differently under 'auto' than under any single concrete
-    method - which is why the explorer keeps 'auto' as its own grid cell rather
-    than aliasing it to whatever it 'resolves' to."""
-    from qsiplan.explorer import grouping_signature
-
-    root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T2w']}})
-    sigs = {}
-    for ref in ('auto', 'synb0', 't2w'):
-        (grouping,) = _plan(root, '01', SessionScope(), sdc_anat_reference=ref).values()
-        sigs[ref] = grouping_signature(grouping)
-    assert sigs['auto'] != sigs['synb0']
-    assert sigs['auto'] != sigs['t2w']
+    unpile = _plan(
+        root,
+        '01',
+        SessionScope(model='sessionwise'),
+        fieldmapless_method='unpile',
+        sdc_anat_reference='t2w',
+    )
+    assert _methods(unpile['sub-01_ses-02']) == {CorrectionMethod.UNPILE}
 
 
 # --------------------------------------------------------------------------- #
@@ -249,6 +245,9 @@ def test_cohort_subject_wide_drilldown_targets_the_subject(tmp_path):
     root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w'], '02': ['dwi', 'T1w']}})
     data = build_cohort_data(Bids2TableCatalog(root), ['01'])
     assert {e['href'] for e in data['session']} == {'01'}  # one subject-wide page
+    # The SyNb0 default needs a T1w: the dashboard carries it as a data fact.
+    assert data['subject'][0]['t1w']
+    assert not data['subject'][0]['t2w']
     assert data['subject'][0]['href'] == '01'
 
 
@@ -286,16 +285,16 @@ def test_serve_sessionwise_routes_by_session_unit(tmp_path):
         Bids2TableCatalog(root),
         ['01'],
         scope=SessionScope(model='sessionwise'),
-        base_policy=GroupingPolicy(sdc_anat_reference='synb0'),
+        base_policy=GroupingPolicy(sdc_anat_reference='none'),
     )
     assert [unit.label for unit in app.units] == ['sub-01_ses-01', 'sub-01_ses-02']
     # Each unit routes to its own isolated live page/view.
     assert '/sub-01_ses-02/view' in app.page('01_ses-02')
     assert (
-        app.view('01_ses-02', 'sdc-anat-reference=synb0&hmc-method=eddy&sdc-method=topup')[
+        app.view('01_ses-02', 'sdc-anat-reference=none&hmc-method=eddy&sdc-method=topup')[
             'policyKey'
         ]
-        == 'sdc-anat-reference=synb0'
+        == 'sdc-anat-reference=none'
     )
     with pytest.raises(KeyError):
         app.page('01_ses-99')  # a session with no unit
@@ -323,12 +322,12 @@ def test_explorer_page_title_carries_the_session(tmp_path):
     assert 'process sub-01 ses-02&rsquo;s diffusion data' in page  # h1 carries the session
 
 
-def test_serve_auto_base_policy_renders(tmp_path):
-    """The live server opens on an 'auto' base policy without the old KeyError."""
+def test_serve_non_default_base_policy_renders(tmp_path):
+    """The live server opens on a non-default fieldmap-less base policy."""
     root = _write_dataset(tmp_path, {'01': {'01': ['dwi', 'T1w']}})
-    app = ExplorerApp(
-        Bids2TableCatalog(root), ['01'], base_policy=GroupingPolicy(sdc_anat_reference='auto')
-    )
-    assert '/sub-01/view' in app.page('01')  # renders, no KeyError
-    view = app.view('01', 'sdc-anat-reference=auto&hmc-method=eddy&sdc-method=topup')
-    assert view['policyKey'] == 'sdc-anat-reference=auto'
+    base = GroupingPolicy(fieldmapless_method='syn', sdc_anat_reference='invt1w')
+    app = ExplorerApp(Bids2TableCatalog(root), ['01'], base_policy=base)
+    assert '/sub-01/view' in app.page('01')
+    key = base.policy_key()
+    view = app.view('01', f'{key}&hmc-method=eddy&sdc-method=topup')
+    assert view['policyKey'] == key

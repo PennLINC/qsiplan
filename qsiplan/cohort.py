@@ -4,7 +4,7 @@ The group-level analog of the single-subject explorer: instead of one grouping,
 this reads every subject, compiles the plan under each head-motion method, and
 sorts subject-sessions into *equivalence classes* - the distinct pipelines the
 data actually produces. In a uniform study hundreds of subjects collapse to a
-handful of classes, and the outliers (a missing scan, a stray T2w) are exactly
+handful of classes, and the outliers (a missing scan, a missing T1w) are exactly
 what a QA pass wants to see.
 
 The spine is one function - :func:`plan_signature`. Two entities share a class
@@ -129,7 +129,7 @@ def build_cohort_data(catalog, subjects, *, scope=None, policy=None, initial_met
     compile the plan under each :data:`COHORT_METHODS` selection. Emits one
     session-level and one subject-level entity per subject-session / subject,
     each carrying per-method signatures and issue counts, plus the data facts
-    (scan count, T2w presence) the completeness matrix needs.
+    (scan count, T1w and T2w presence) the completeness matrix needs.
 
     Honors both scope axes. Under ``sessionwise`` each session is compiled as
     its own isolated unit (so its signature reflects session-scoped anatomy and
@@ -155,7 +155,7 @@ def build_cohort_data(catalog, subjects, *, scope=None, policy=None, initial_met
         subj_methods = {key: [] for key, _l, _s in COHORT_METHODS}
         subj_sessions = []
         subj_scans = 0
-        subj_has_t2w = False
+        subj_has_t1w = subj_has_t2w = False
         subject_href = None  # the unit a subject-level row drills into
 
         for unit, unit_records in plan_units(subject, records, scope.model):
@@ -164,7 +164,9 @@ def build_cohort_data(catalog, subjects, *, scope=None, policy=None, initial_met
                 subject_href = unit_key
             grouping = build_for_policy(unit_records, subject, policy, index_issues)
             plans = {key: compile_plan(grouping, sel) for key, _label, sel in COHORT_METHODS}
+            has_t1w = bool(grouping.anat_files('T1w'))
             has_t2w = bool(grouping.anat_files('T2w'))
+            subj_has_t1w = subj_has_t1w or has_t1w
             subj_has_t2w = subj_has_t2w or has_t2w
             subj_scans += sum(1 for record in grouping.files.values() if record.is_dwi)
 
@@ -185,6 +187,7 @@ def build_cohort_data(catalog, subjects, *, scope=None, policy=None, initial_met
                         'label': f'{subject}/{session}' if session else subject,
                         'href': unit_key,
                         'scans': scans,
+                        't1w': has_t1w,
                         't2w': has_t2w,
                         'byMethod': by_method,
                     }
@@ -213,6 +216,7 @@ def build_cohort_data(catalog, subjects, *, scope=None, policy=None, initial_met
                 'href': subject_href,
                 'sessions': subj_sessions,
                 'scans': subj_scans,
+                't1w': subj_has_t1w,
                 't2w': subj_has_t2w,
                 'byMethod': subj_by_method,
             }

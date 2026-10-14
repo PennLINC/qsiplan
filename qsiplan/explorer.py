@@ -24,7 +24,7 @@ import itertools
 import json
 
 from .inference import build_grouping
-from .models import ANAT_REFERENCES, DWIGrouping, FileRecord, GroupingPolicy
+from .models import FIELDMAPLESS_METHODS, DWIGrouping, FileRecord, GroupingPolicy
 
 
 def canonical_explorer_policy(policy: GroupingPolicy | None = None) -> GroupingPolicy:
@@ -45,15 +45,12 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
 
     The grid mirrors the CLI's policy flags: the six boolean toggles
     (``--separate-all-dwis`` and the ``--ignore`` values fieldmaps/pepolar-dwis/
-    t2w/shims/fov), the anatomical-SDC axis as native ``(sdc_anat_reference,
-    force_sdc_anat_reference)`` pairs - every method as a fallback plus every method
-    forced, and ``'auto'`` alongside them; ``('none', True)`` is the only
-    invalid pair and is excluded. ``'auto'`` is a first-class cell, not an
-    alias: it resolves per session (:func:`~.inference.resolve_fieldmapless`),
-    so on a subject whose sessions carry different anatomicals its grouping can
-    differ from every single concrete method - it content-dedups with one only
-    when they coincide. The one field outside the grid (``ignore_sdc``) carries
-    ``base``'s value through every combination.
+    t2w/shims/fov), the fieldmap-less SDC axis as native ``(fieldmapless_method,
+    sdc_anat_reference, force_sdc_anat_reference)`` triples - every valid
+    (method, reference) pair as a fallback and forced, plus ``'none'`` (never
+    forced: there is nothing to force) - and the distortion-group merge. The one
+    field outside the grid (``ignore_sdc``) carries ``base``'s value through every
+    combination.
     """
     base = canonical_explorer_policy(base)
     policies = []
@@ -64,7 +61,7 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
         no_t2w,
         no_shims,
         no_fov,
-        (sdc_anat_reference, force_sdc_anat_reference),
+        (sdc_anat_reference, fieldmapless_method, force_sdc_anat_reference),
         merge,
     ) in itertools.product(
         (False, True),
@@ -74,11 +71,13 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
         (False, True),
         (False, True),
         (
-            ('none', False),
-            ('auto', False),
-            *((name, False) for name in ANAT_REFERENCES),
-            ('auto', True),
-            *((name, True) for name in ANAT_REFERENCES),
+            ('none', 'topup', False),
+            *(
+                (reference, method.name, force)
+                for force in (False, True)
+                for method in FIELDMAPLESS_METHODS.values()
+                for reference in method.references
+            ),
         ),
         ('concat', 'average', 'none'),
     ):
@@ -92,6 +91,7 @@ def reachable_policies(base: GroupingPolicy | None = None) -> list[GroupingPolic
                 ignore_shims=no_shims,
                 ignore_fov=no_fov,
                 sdc_anat_reference=sdc_anat_reference,
+                fieldmapless_method=fieldmapless_method,
                 force_sdc_anat_reference=force_sdc_anat_reference,
                 distortion_group_merge=merge,
             )
@@ -136,7 +136,7 @@ def drop_t2w(records: list[FileRecord], index_issues=()) -> tuple[list[FileRecor
 
     Filters out the T2w anat records (and any indexing issues that only concern
     them), so one T2w-included index pass serves both settings. T1w records are
-    kept - only T2Wreg fieldmap-less correction depends on the T2w.
+    kept - only the T2w reference of the fieldmap-less correction depends on the T2w.
     """
     t2w_paths = {record.path for record in records if record.is_anat and record.suffix == 'T2w'}
     kept_records = [record for record in records if record.path not in t2w_paths]
