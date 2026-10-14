@@ -145,16 +145,21 @@ def parse_file_entities(path):
     if extension:
         parsed['extension'] = extension
 
-    parts = path.parts
-    for index, part in enumerate(parts):
-        if not part.startswith('sub-'):
-            continue
-        datatype_index = index + 1
-        if datatype_index < len(parts) and parts[datatype_index].startswith('ses-'):
-            datatype_index += 1
-        if datatype_index < len(parts) - 1:
-            parsed['datatype'] = parts[datatype_index]
-        break
+    # BIDS fixes the layout as ``sub-<label>/[ses-<label>/]<datatype>/<file>``,
+    # so the datatype is the file's own directory when that directory sits in
+    # the file's subject (or a session of it). Read it from there rather than
+    # searching the absolute path: a directory above the dataset root may
+    # itself be named ``sub-*`` (e.g. a per-subject working directory).
+    datatype_dir = path.parent
+    subject_dir = datatype_dir.parent
+    if subject_dir.name.startswith('ses-'):
+        subject_dir = subject_dir.parent
+    if (
+        'sub' in entities
+        and subject_dir.name == f'sub-{entities["sub"]}'
+        and not datatype_dir.name.startswith(('sub-', 'ses-'))
+    ):
+        parsed['datatype'] = datatype_dir.name
     return parsed
 
 

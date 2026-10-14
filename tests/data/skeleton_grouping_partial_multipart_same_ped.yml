@@ -1,0 +1,32 @@
+# Partially curated concatenation with nothing to tell the series apart:
+# four runs share one phase encoding direction and no fieldmap. run-1 and
+# run-2 carry MultipartID 'combined', run-3 and run-4 carry nothing.
+# Expected: one curated output for run-1+run-2 and one single-series output
+# each for run-3 and run-4. Sharing a distortion is not a reason to combine
+# series once a MultipartID is present.
+'01':
+  - anat:
+      - suffix: T1w
+    dwi:
+      - run: '1'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          MultipartID: combined
+      - run: '2'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          MultipartID: combined
+      - run: '3'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - run: '4'
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05

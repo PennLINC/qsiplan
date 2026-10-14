@@ -14,6 +14,7 @@ dependencies = [
     "bids2table >= 2.3.1",
     "nibabel",
     "numpy",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,12 @@ tests = [
 # not ruff itself, and local and CI can never disagree on a ruff version.
 dev = [
     "pre-commit",
+]
+docs = [
+    "sphinx >= 7",
+    "sphinx_rtd_theme",
+    "myst-nb",
+    "sphinx-argparse",
 ]
 
 [project.scripts]

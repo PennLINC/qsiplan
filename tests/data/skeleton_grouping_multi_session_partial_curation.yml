@@ -1,0 +1,35 @@
+# Two sessions, each with an AP+PA pair. The ses-1 pair is linked with
+# B0FieldIdentifier/B0FieldSource; ses-2 carries nothing.
+# Expected: fieldmap linkage is subject-wide, so no pairing is inferred for
+# ses-2. Its series go uncorrected, with a reverse-pe-not-inferred warning.
+'01':
+  - session: '1'
+    anat:
+      - suffix: T1w
+    dwi:
+      - dir: AP
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar01
+          B0FieldSource: pepolar01
+      - dir: PA
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar01
+          B0FieldSource: pepolar01
+  - session: '2'
+    dwi:
+      - dir: AP
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: PA
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05

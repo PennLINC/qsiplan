@@ -60,13 +60,13 @@ Output "sub-01" (4 series):
   8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
 
 Output "sub-01_acq-hi" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. TOPUP estimates the susceptibility field from b=0 images spanning 2 distortion groups (2 rows in the acquisition-parameters file).
   3. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field. Every volume is assigned to its distortion group in the eddy index file.
   4. The corrected series is written as one output file.
 
 Output "sub-01_acq-lo" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. TOPUP estimates the susceptibility field from b=0 images spanning 2 distortion groups (2 rows in the acquisition-parameters file).
   3. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field. Every volume is assigned to its distortion group in the eddy index file.
   4. The corrected series is written as one output file.
@@ -85,13 +85,13 @@ Output "sub-01" (4 series):
   8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
 
 Output "sub-01_acq-hi" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. TORTOISE DIFFPREP corrects head motion and eddy currents separately for each distortion group (sub-01_acq-hi_dir-AP, sub-01_acq-hi_dir-PA).
   3. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_acq-hi_dir-PA) and blip-down (sub-01_acq-hi_dir-AP) data and applies the correction to every volume.
   4. The corrected series is written as one output file.
 
 Output "sub-01_acq-lo" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. TORTOISE DIFFPREP corrects head motion and eddy currents separately for each distortion group (sub-01_acq-lo_dir-AP, sub-01_acq-lo_dir-PA).
   3. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_acq-lo_dir-PA) and blip-down (sub-01_acq-lo_dir-AP) data and applies the correction to every volume.
   4. The corrected series is written as one output file.
@@ -112,14 +112,14 @@ Output "sub-01" (4 series):
   10. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
 
 Output "sub-01_acq-hi" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
   3. eddy corrects head motion and eddy currents using the TOPUP field.
   4. DRBUDDI re-estimates distortion along the j axis from the eddy-corrected blip-up/blip-down dMRI series, refining the TOPUP correction.
   5. The corrected series is written as one output file.
 
 Output "sub-01_acq-lo" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. TOPUP estimates an initial susceptibility field from the b=0 images (as in the FSL path).
   3. eddy corrects head motion and eddy currents using the TOPUP field.
   4. DRBUDDI re-estimates distortion along the j axis from the eddy-corrected blip-up/blip-down dMRI series, refining the TOPUP correction.
@@ -139,13 +139,13 @@ Output "sub-01" (4 series):
   8. The corrected results of the 2 units are resampled onto one grid and concatenated into one output file.
 
 Output "sub-01_acq-hi" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
   3. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_acq-hi_dir-PA) and blip-down (sub-01_acq-hi_dir-AP) data and applies the correction to every volume.
   4. The corrected series is written as one output file.
 
 Output "sub-01_acq-lo" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. SHORELine iteratively corrects head motion by registering each volume to a 3dSHORE signal-model prediction (eddy currents are not corrected).
   3. DRBUDDI estimates distortion along the j axis from the blip-up (sub-01_acq-lo_dir-PA) and blip-down (sub-01_acq-lo_dir-AP) data and applies the correction to every volume.
   4. The corrected series is written as one output file.

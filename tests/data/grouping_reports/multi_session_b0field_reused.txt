@@ -33,14 +33,14 @@ Processing preview: eddy + TOPUP (--hmc-method eddy --sdc-method topup)
 -----------------------------------------------------------------------
 
 Output "sub-01_ses-1" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_ses-1_T1w.nii.gz).
   3. TOPUP estimates the susceptibility field from the acquired b=0 images plus the synthetic b=0, which enters as a zero-readout-time volume (an extra row in the acquisition-parameters file).
   4. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field.
   5. The corrected series is written as one output file.
 
 Output "sub-01_ses-2" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_ses-1_T1w.nii.gz).
   3. TOPUP estimates the susceptibility field from the acquired b=0 images plus the synthetic b=0, which enters as a zero-readout-time volume (an extra row in the acquisition-parameters file).
   4. eddy corrects head motion, eddy currents, and susceptibility distortion in one model, using the TOPUP field.
@@ -73,12 +73,12 @@ Processing preview: eddy + TOPUP→DRBUDDI (--hmc-method eddy --sdc-method topup
 ---------------------------------------------------------------------------------------
 
 Output "sub-01_ses-1" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_ses-1_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume, and eddy corrects head motion, eddy currents, and susceptibility distortion in one model using the resulting field. With no reverse phase-encoded dMRI series the DRBUDDI second stage does not run.
   3. The corrected series is written as one output file.
 
 Output "sub-01_ses-2" (2 series):
-  1. Each series is denoised on its own, then all 2 series are concatenated. (--denoise-after-combining reverses this order.)
+  1. Each series is denoised on its own, then all 2 series are concatenated.
   2. SyNb0 synthesizes an undistorted b=0 image from the T1w (sub-01_ses-1_T1w.nii.gz); TOPUP treats it as a zero-readout-time volume, and eddy corrects head motion, eddy currents, and susceptibility distortion in one model using the resulting field. With no reverse phase-encoded dMRI series the DRBUDDI second stage does not run.
   3. The corrected series is written as one output file.
 
