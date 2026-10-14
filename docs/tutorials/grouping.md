@@ -313,8 +313,11 @@ heuristic switches off for the remaining scans, in every session, and a warning 
 exactly what happened.
 
 Here run-1 is curated into `pepolar01` and run-2 carries nothing. Run-2 does
-**not** get an automatic estimation — if you had wanted the run-2 scans to
-correct each other, you would have given them a `B0FieldIdentifier` too:
+**not** get a reverse-PE estimation — if you had wanted the run-2 scans to
+correct each other, you would have given them a `B0FieldIdentifier` too.
+What it gets instead is the fieldmap-less correction, which by default
+synthesizes an undistorted b=0 from the T1w; this subject has no T1w, so the
+report ends with an error saying so:
 
 ```{code-cell} ipython3
 runs = [
@@ -343,17 +346,17 @@ susceptibility correction. Corrected and uncorrected volumes never share a
 final file, so the corrected run-1 pair becomes one output while the
 uncorrected run-2 scans stand alone.
 
-The safety net for unlinked scans is the **anatomical SDC reference**,
+The safety net for unlinked scans is the **fieldmap-less correction**,
 which stays available because — unlike sidecar metadata — it is under your
-control at run time (`--sdc-anat-reference`; under the default `none`
-nothing anatomical happens). Add a T2w to the same subject and ask for
-`auto`, and run-2 is rescued, visibly tagged *inferred*, in its own
-correction unit — and because every unit is now corrected, their corrected
-results are concatenated into a single final output:
+control at run time (`--sdc-fieldmapless-method` and `--sdc-anat-reference`;
+`--sdc-anat-reference none` switches it off). Add a T1w to the same subject
+and run-2 is rescued, visibly tagged *inferred*, in its own correction unit —
+and because every unit is now corrected, their corrected results are
+concatenated into a single final output:
 
 ```{code-cell} ipython3
-t2w = scan('sub-01_T2w.nii.gz', folder='anat', suffix='T2w', PhaseEncodingDirection=None, TotalReadoutTime=None)
-g = group(*runs, t2w, sdc_anat_reference='auto')
+t1w = scan('sub-01_T1w.nii.gz', folder='anat', suffix='T1w', PhaseEncodingDirection=None, TotalReadoutTime=None)
+g = group(*runs, t1w)
 print(report_text(g))
 ```
 
@@ -413,32 +416,34 @@ g = group(*runs, ignore_shims=True)
 print(report_text(g))
 ```
 
-## 7. No fieldmap at all: the anatomical SDC reference
+## 7. No fieldmap at all: the fieldmap-less correction
 
-With no fieldmap and no reverse-PE partner, a series is left uncorrected by
-default — anatomical (fieldmap-less) correction is opt-in. The
-`--sdc-anat-reference` flag names which anatomical-derived image serves as
-the correction reference, and `auto` resolves it per subject: a T1w selects
-the SyNb0 synthetic b=0, otherwise a T2w selects a **T2w registration**
-(T2Wreg) — the distorted b=0 is registered to the undistorted T2w:
+With no fieldmap and no reverse-PE partner, a series gets the
+**fieldmap-less correction** by default. `--sdc-fieldmapless-method` picks
+the method and `--sdc-anat-reference` the anatomical-derived image it works
+from. The default, `topup` with `synb0`, synthesizes an undistorted b=0 from
+the T1w and pairs it with the acquired b=0 in TOPUP; `syn` registers the
+synthetic b=0 or the inverted-contrast T1w (`invt1w`) with a restricted SyN;
+and `unpile`, which is experimental, fits a model of the EPI readout to the
+synthetic b=0 or to a real T2w (`t2w`). A subject without the image the
+method needs cannot run it — the report says so with an error — and
+`--sdc-anat-reference none` leaves such series uncorrected instead:
 
 ```{code-cell} ipython3
 dwi = scan('sub-01_dir-AP_dwi.nii.gz', PhaseEncodingDirection='j-')
 t1w = scan('sub-01_T1w.nii.gz', folder='anat', suffix='T1w', PhaseEncodingDirection=None, TotalReadoutTime=None)
 t2w = scan('sub-01_T2w.nii.gz', folder='anat', suffix='T2w', PhaseEncodingDirection=None, TotalReadoutTime=None)
-g = group(dwi, t2w, sdc_anat_reference='auto')
+g = group(dwi, t1w)
 show(g, height=680)
 ```
 
-Naming a reference explicitly gets provenance **cli-override** (purple):
-`synb0` synthesizes an undistorted b=0 from the T1w, and `invt1w` registers
-an inverted-contrast T1w to a fieldmap atlas (the niworkflows SyN-SDC). A
-real fieldmap always outranks the fallback — the reference only applies to
-series that would otherwise go uncorrected, unless you escalate it with
-`--force sdc-anat-reference`:
+A real fieldmap always outranks the fallback — the fieldmap-less correction
+only applies to series that would otherwise go uncorrected, unless you
+escalate it with `--force sdc-anat-reference`. Asking for unpile against the
+T2w:
 
 ```{code-cell} ipython3
-g = group(dwi, t1w, t2w, sdc_anat_reference='synb0')
+g = group(dwi, t2w, fieldmapless_method='unpile', sdc_anat_reference='t2w')
 print(report_text(g))
 ```
 

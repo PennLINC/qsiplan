@@ -188,30 +188,63 @@ class AnatReferencesDirective(Directive):
 
     def run(self):
         references = _registry('qsiplan.models', 'ANAT_REFERENCES')
+        methods = _registry('qsiplan.models', 'FIELDMAPLESS_METHODS')
         rows = []
         for reference in references.values():
-            codes = [reference.missing_anat_issue[0]]
-            if reference.pedir_issue is not None:
-                codes.append(reference.pedir_issue[0])
+            accepted = [m.name for m in methods.values() if reference.name in m.references]
             rows.append(
                 [
                     nodes.literal('', reference.name),
-                    _label(reference.method),
                     reference.source_suffix,
-                    f'auto+{reference.id_stem}',
-                    _label(reference.auto_rank),
-                    _label(reference.pedir_issue is not None),
-                    ', '.join(codes),
+                    ', '.join(accepted) if accepted else '-',
+                    _label(reference.structural_target),
+                    reference.missing_anat_issue[0],
                     reference.description,
                 ]
             )
         headers = [
             'Value',
-            'Method',
             'Anatomical image',
-            'Estimation id',
-            'Auto rank',
+            'Accepted by',
+            'Structural target',
+            'Issue code',
+            'Description',
+        ]
+        return [_table(headers, rows)]
+
+
+class FieldmaplessMethodsDirective(Directive):
+    """One row per ``--sdc-fieldmapless-method`` value in the FIELDMAPLESS_METHODS table."""
+
+    def run(self):
+        methods = _registry('qsiplan.models', 'FIELDMAPLESS_METHODS')
+        rows = []
+        for method in methods.values():
+            codes = [
+                issue[0]
+                for issue in (method.pedir_issue, method.readout_issue)
+                if issue is not None
+            ]
+            ids = ', '.join(f'auto+{stem}' for stem in dict.fromkeys(method.id_stems.values()))
+            rows.append(
+                [
+                    nodes.literal('', method.name),
+                    _label(method.method),
+                    ', '.join(method.references),
+                    ids,
+                    _label(method.pedir_issue is not None),
+                    _label(method.readout_issue is not None),
+                    ', '.join(codes) if codes else '-',
+                    method.description,
+                ]
+            )
+        headers = [
+            'Value',
+            'Estimation method',
+            'References',
+            'Estimation ids',
             'Needs PhaseEncodingDirection',
+            'Needs TotalReadoutTime',
             'Issue codes',
             'Description',
         ]
@@ -246,5 +279,6 @@ def setup(app):
     app.add_directive('qsiplan-issue-codes', IssueCodesDirective)
     app.add_directive('qsiplan-capabilities', CapabilitiesDirective)
     app.add_directive('qsiplan-anat-references', AnatReferencesDirective)
+    app.add_directive('qsiplan-fieldmapless-methods', FieldmaplessMethodsDirective)
     app.add_directive('qsiplan-plan-options', PlanOptionsDirective)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}

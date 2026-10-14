@@ -3,7 +3,8 @@
 ```bash
 qsiplan /path/to/bids [--participant-label 01 02] [--session-label 1] \
     [--hmc-method eddy|shoreline|tortoise] [--sdc-method auto|topup|drbuddi|topup+drbuddi] \
-    [--ignore fieldmaps shims fov] [--separate-all-dwis] [--sdc-anat-reference auto] \
+    [--ignore fieldmaps shims fov] [--separate-all-dwis] \
+    [--sdc-fieldmapless-method topup|syn|unpile] [--sdc-anat-reference synb0|invt1w|t2w|none] \
     [--html PATH | --cohort-html PATH | --serve]
 ```
 
