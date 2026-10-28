@@ -1,0 +1,71 @@
+# Fieldmaps for the BOLD runs sit next to an uncurated AP/PA DWI pair. None
+# of them is QSIPlan's concern: the 'bold' pair's B0FieldIdentifier is
+# sourced by a BOLD run, the 'rest' pair's IntendedFor names only a BOLD run,
+# and the 'gone' fieldmap is IntendedFor a BOLD run missing from the dataset
+# (as in a copy holding only what QSIPrep reads). Expected: no fieldmap is
+# indexed, no issue, and the DWIs still pair by the reverse-PE heuristic.
+'01':
+  - session: '1'
+    anat:
+      - suffix: T1w
+    fmap:
+      - acq: bold
+        dir: AP
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.03
+          B0FieldIdentifier: pepolar_bold
+      - acq: bold
+        dir: PA
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.03
+          B0FieldIdentifier: pepolar_bold
+      - acq: rest
+        dir: AP
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.03
+          B0FieldIdentifier: pepolar_rest
+          IntendedFor: ['ses-1/func/sub-01_ses-1_task-rest_bold.nii.gz']
+      - acq: rest
+        dir: PA
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.03
+          B0FieldIdentifier: pepolar_rest
+          IntendedFor: ['ses-1/func/sub-01_ses-1_task-rest_bold.nii.gz']
+      - acq: gone
+        dir: PA
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.03
+          IntendedFor: ['bids::sub-01/ses-1/func/sub-01_ses-1_task-gone_bold.nii.gz']
+    func:
+      - task: nback
+        suffix: bold
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.03
+          B0FieldSource: pepolar_bold
+      - task: rest
+        suffix: bold
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.03
+    dwi:
+      - dir: AP
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+      - dir: PA
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05

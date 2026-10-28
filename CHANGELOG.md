@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fieldmaps that belong to another modality are left out of the grouping. A fieldmap no
+  DWI links to is another modality's when its `B0FieldIdentifier` is named by an image
+  outside `dwi/`, `fmap/` and `anat/` (a BOLD run's `B0FieldSource`, say), or when its
+  `IntendedFor` names only images outside `dwi/`. Such fieldmaps used to draw
+  `unlinked-fmap`, `estimation-unused` and `intendedfor-missing-target` warnings, and a
+  curated one counted as fieldmap curation, which switched off the reverse-PE pairing of
+  uncurated DWIs. A fieldmap linked to nothing is still reported as `unlinked-fmap`.
 - The fieldmap-less correction is chosen by a method (`--sdc-fieldmapless-method`: `topup`
   for SyNb0 + TOPUP, `syn`, or `unpile`, which is experimental) and an anatomical reference
   (`--sdc-anat-reference`: `synb0`, `invt1w`, `t2w`), with the issues each combination

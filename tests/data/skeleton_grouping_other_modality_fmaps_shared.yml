@@ -1,0 +1,48 @@
+# The PA epi fieldmap declares two identifiers: 'pepolar_dwi', which the AP
+# DWI declares and sources, and 'pepolar_bold', which a BOLD run sources.
+# The AP epi declares 'pepolar_bold' alone. A GRE fieldmap declares 'orphan',
+# which nothing sources. Expected: the AP epi is dropped, 'pepolar_bold' is
+# struck from the PA epi, which still corrects the DWI under 'pepolar_dwi',
+# and 'orphan' is kept with an estimation-unused warning: no other modality
+# claims it, so it may be a DWI fieldmap missing its B0FieldSource.
+'01':
+  - anat:
+      - suffix: T1w
+    fmap:
+      - dir: AP
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar_bold
+      - dir: PA
+        suffix: epi
+        metadata:
+          PhaseEncodingDirection: 'j'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: [pepolar_dwi, pepolar_bold]
+      - acq: gre
+        suffix: phasediff
+        metadata:
+          EchoTime1: 0.00492
+          EchoTime2: 0.00738
+          B0FieldIdentifier: orphan
+      - acq: gre
+        suffix: magnitude1
+        metadata:
+          B0FieldIdentifier: orphan
+    func:
+      - task: rest
+        suffix: bold
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldSource: pepolar_bold
+    dwi:
+      - dir: AP
+        suffix: dwi
+        metadata:
+          PhaseEncodingDirection: 'j-'
+          TotalReadoutTime: 0.05
+          B0FieldIdentifier: pepolar_dwi
+          B0FieldSource: pepolar_dwi

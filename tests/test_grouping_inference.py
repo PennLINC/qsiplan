@@ -713,6 +713,35 @@ def test_unlinked_fmap(tmp_path):
     assert all(name.endswith('_dwi.nii.gz') for name in basenames(estimation.sources))
 
 
+def test_other_modality_fmaps_are_dropped(tmp_path):
+    """Fieldmaps linked only to BOLD runs are not indexed, raise no issue, and
+    do not count as curation: the DWIs still pair by the heuristic."""
+    grouping = load_scenario('other_modality_fmaps', tmp_path)
+
+    assert not grouping.issues
+    assert {record.datatype for record in grouping.files.values()} == {'dwi', 'anat'}
+    (estimation,) = grouping.estimations.values()
+    assert estimation.provenance is Provenance.INFERRED
+    assert set(grouping.application.values()) == {estimation.b0field_id}
+
+
+def test_other_modality_identifier_is_struck_from_shared_fmap(tmp_path):
+    """A fieldmap serving both modalities keeps only its DWI identifier, and an
+    identifier no modality claims still draws estimation-unused."""
+    grouping = load_scenario('other_modality_fmaps_shared', tmp_path)
+
+    assert set(grouping.estimations) == {'pepolar_dwi', 'orphan'}
+    assert basenames(grouping.estimations['pepolar_dwi'].sources) == [
+        'sub-01_dir-AP_dwi.nii.gz',
+        'sub-01_dir-PA_epi.nii.gz',
+    ]
+    (pa_epi,) = [record for record in grouping.files.values() if record.suffix == 'epi']
+    assert pa_epi.b0field_identifiers == ('pepolar_dwi',)
+    assert set(grouping.application.values()) == {'pepolar_dwi'}
+    (unused,) = [issue for issue in grouping.warnings if issue.code == 'estimation-unused']
+    assert "'orphan'" in unused.message
+
+
 def test_b0only_fmap_with_bvals(tmp_path):
     """A dwi-like epi fmap (with bval/bvec) is a source, never an output."""
     grouping = load_scenario('b0only_fmap_with_bvals', tmp_path)
