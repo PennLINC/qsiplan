@@ -9,6 +9,7 @@ fmap/, and anat/ image into a :class:`~.models.FileRecord`, normalizing:
   warning) absolute paths, all resolved to absolute paths. pybids'
   ``layout.get_fieldmap`` is deliberately not used - it only understands
   relative-path IntendedFor and cannot query B0Field* fields at all.
+  Fieldmaps linked only to other modalities' images are not indexed.
 - ``ShimSetting``: list to tuple, so signatures are hashable.
 - ``TotalReadoutTime``: rounded to :data:`~.models.READOUT_TOLERANCE` so
   float jitter between sidecars does not split groups.
@@ -22,6 +23,7 @@ placeholders - and the downstream checks skip undetermined values.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import os.path as op
@@ -204,6 +206,17 @@ def _normalize_to_tuple(value) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _intended_for_path(entry: str, bids_root: str, subject_id: str) -> str:
+    """The absolute path one IntendedFor entry names."""
+    match = _BIDS_URI.match(entry)
+    if match:
+        return op.abspath(op.join(bids_root, match.group('relpath')))
+    if op.isabs(entry):
+        return op.abspath(entry)
+    # The BIDS-legal relative form: relative to the subject directory
+    return op.abspath(op.join(bids_root, f'sub-{subject_id}', entry))
+
+
 def build_signature(metadata: dict) -> DistortionSignature:
     """Extract the distortion-relevant parameters from a merged sidecar."""
     readout_time = metadata.get('TotalReadoutTime')
@@ -240,10 +253,7 @@ def resolve_intended_for(
     """
     resolved = []
     for entry in entries:
-        match = _BIDS_URI.match(entry)
-        if match:
-            candidate = op.join(bids_root, match.group('relpath'))
-        elif op.isabs(entry):
+        if not _BIDS_URI.match(entry) and op.isabs(entry):
             issues.append(
                 warning(
                     'intendedfor-absolute-path',
@@ -252,12 +262,7 @@ def resolve_intended_for(
                     (fmap_path,),
                 )
             )
-            candidate = entry
-        else:
-            # The BIDS-legal relative form: relative to the subject directory
-            candidate = op.join(bids_root, f'sub-{subject_id}', entry)
-
-        candidate = op.abspath(candidate)
+        candidate = _intended_for_path(entry, bids_root, subject_id)
         if companion_primary:
             # A phase image names the same acquisition as its magnitude.
             candidate = companion_primary.get(candidate, candidate)
@@ -509,6 +514,114 @@ def _split_parts(paths, issues: list[GroupingIssue]) -> tuple[list[str], dict[st
     return [path for path in paths if path in keep], companion_of
 
 
+#: Datatypes whose images QSIPlan indexes. ``B0Field*`` linkage on any other
+#: datatype's images (func/, perf/, ...) belongs to another modality.
+_INDEXED_DATATYPES = ('dwi', 'fmap', 'anat')
+
+
+def _other_modality_linkage(bids_root: str, subject_id: str) -> set[str]:
+    """The ``B0Field*`` identifiers the subject's other images (BOLD, ASL, ...) name.
+
+    Unions ``B0FieldSource`` and ``B0FieldIdentifier`` over the images in the
+    subject's other datatype directories, with sidecar inheritance. Problems
+    in those sidecars are not QSIPlan's concern and are not reported.
+    """
+    subject_dir = Path(bids_root) / f'sub-{subject_id}'
+    images = sorted(
+        str(path)
+        for pattern in ('*/*.nii*', 'ses-*/*/*.nii*')
+        for path in subject_dir.glob(pattern)
+        if parse_file_entities(path).get('datatype') not in (None, *_INDEXED_DATATYPES)
+    )
+    inheritance = BIDSInheritanceIndex(images, extensions=('.json',), root=bids_root)
+    cache, invalid = {}, set()
+    identifiers = set()
+    for image in images:
+        metadata = _load_metadata(image, inheritance, [], cache, invalid)
+        identifiers.update(_normalize_to_tuple(metadata.get('B0FieldSource')))
+        identifiers.update(_normalize_to_tuple(metadata.get('B0FieldIdentifier')))
+    return identifiers
+
+
+def _intended_elsewhere(record: FileRecord, bids_root: str, subject_id: str) -> bool:
+    """True when a fieldmap's IntendedFor lists images, none of them in dwi/."""
+    entries = _normalize_to_tuple(record.metadata.get('IntendedFor'))
+    return bool(entries) and all(
+        parse_file_entities(_intended_for_path(entry, bids_root, subject_id)).get('datatype')
+        not in (None, 'dwi')
+        for entry in entries
+    )
+
+
+def _drop_other_modality_fieldmaps(records, issues, bids_root, subject_id):
+    """Remove the fieldmaps that belong to another modality (BOLD, ASL, ...).
+
+    A ``B0FieldIdentifier`` is another modality's when no DWI declares or
+    sources it and no fieldmap declaring it is intended for a DWI, while an
+    image outside dwi/, fmap/ and anat/ names it or a fieldmap declaring it
+    is intended only for images outside dwi/. An uncurated fieldmap is
+    another modality's when its IntendedFor names only images outside dwi/.
+
+    Such a fieldmap is no more QSIPlan's concern than the images it corrects.
+    Kept, it would raise warnings about itself and count as fieldmap curation
+    of the subject, which switches the reverse-PE heuristic off. So its
+    records are dropped (or its identifier struck from records that also
+    serve the DWIs), along with the indexing issues that only concern them.
+    A fieldmap linked to nothing is kept: it may be a DWI fieldmap awaiting
+    curation, which is what ``unlinked-fmap`` says.
+    """
+    dwi_linked = {
+        identifier
+        for record in records
+        if record.is_dwi or record.intended_for
+        for identifier in (*record.b0field_identifiers, *record.b0field_sources)
+    }
+    candidates = {
+        identifier
+        for record in records
+        if not record.is_dwi
+        for identifier in record.b0field_identifiers
+        if identifier not in dwi_linked
+    }
+    elsewhere = set()
+    if candidates:
+        named_elsewhere = _other_modality_linkage(bids_root, subject_id)
+        intended_elsewhere = {
+            identifier
+            for record in records
+            if record.datatype == 'fmap' and _intended_elsewhere(record, bids_root, subject_id)
+            for identifier in record.b0field_identifiers
+        }
+        elsewhere = candidates & (named_elsewhere | intended_elsewhere)
+
+    dropped = set()
+    kept = []
+    for record in records:
+        if record.datatype == 'fmap' and not record.intended_for:
+            identifiers = set(record.b0field_identifiers)
+            if (identifiers and identifiers <= elsewhere) or (
+                not identifiers and _intended_elsewhere(record, bids_root, subject_id)
+            ):
+                dropped.update(path for path in (record.path, record.phase_path) if path)
+                continue
+        if elsewhere.intersection(record.b0field_identifiers):
+            record = dataclasses.replace(
+                record,
+                b0field_identifiers=tuple(
+                    identifier
+                    for identifier in record.b0field_identifiers
+                    if identifier not in elsewhere
+                ),
+            )
+        kept.append(record)
+    kept_issues = [
+        issue
+        for issue in issues
+        if not (issue.files and all(path in dropped for path in issue.files))
+    ]
+    return kept, kept_issues
+
+
 def index_subject(
     layout,
     subject_data: dict,
@@ -527,6 +640,10 @@ def index_subject(
     once, as its magnitude; the phase image is carried on that record's
     ``phase_path`` and never becomes a series of its own. Real/imaginary
     parts, and a phase with no magnitude, are ignored with a warning.
+
+    Fieldmaps that belong to another modality (linked to BOLD or ASL runs
+    and to no DWI) are left out silently; see
+    :func:`_drop_other_modality_fieldmaps`.
 
     Parameters
     ----------
@@ -600,4 +717,4 @@ def index_subject(
         )
         for path in all_files
     ]
-    return records, issues
+    return _drop_other_modality_fieldmaps(records, issues, bids_root, subject_id)

@@ -555,6 +555,12 @@ print(report_text(g))
 **3. A fieldmap with neither field is never used.** It draws an
 `unlinked-fmap` warning and is ignored entirely.
 
+**4. Another modality's fieldmaps are left out.** A fieldmap no DWI links to,
+whose `IntendedFor` names only images outside `dwi/` (BOLD runs, say), or
+whose `B0FieldIdentifier` a BOLD or ASL run names, is not QSIPrep's concern.
+It is not indexed at all, so it raises no warning and does not count as
+curation.
+
 ## Try it on your own data
 
 Everything above runs from a real BIDS directory too — without processing

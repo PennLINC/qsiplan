@@ -64,6 +64,8 @@ SCENARIOS = [
     'name_collision_inferred',
     'nibs_style',
     'nonshelled_pair',
+    'other_modality_fmaps',
+    'other_modality_fmaps_shared',
     'partial_curation',
     'partial_curation_stranded',
     'partial_intendedfor',

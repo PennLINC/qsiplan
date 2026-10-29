@@ -119,7 +119,8 @@ report:
 : A heuristic. The reverse-PE pairing runs only for subjects with no
   fieldmap linkage at all; once any fieldmap in the subject is linked, by
   `B0Field*` or by an epi fieldmap's `IntendedFor`, no pairing is guessed
-  in any of its sessions.
+  in any of its sessions. Fieldmaps linked only to another modality's
+  images (BOLD, ASL) do not count: they are left out of the grouping.
 
 ## Anatomical SDC reference: fallback or override
 
